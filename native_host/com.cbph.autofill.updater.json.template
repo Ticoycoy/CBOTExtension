@@ -1,0 +1,9 @@
+{
+  "name": "com.cbph.autofill.updater",
+  "description": "Runs the extension updater when requested from the popup",
+  "path": "ABSOLUTE_PATH_TO_RUN_HOST_BAT",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://EXTENSION_ID/"
+  ]
+}

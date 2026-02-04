@@ -1,0 +1,1146 @@
+# 🎯 AUTOMATION CONTROLLER GUIDE
+## Complete Reference for Creating Site-Specific Controllers
+
+---
+
+## 📋 **QUICK START - Creating a New Controller**
+
+1. **Create a new JSON file** in `public/automation/` named after your site (e.g., `example.com.json`)
+2. **Start with basic structure** - array of step objects
+3. **Add steps in order** - the automation runs sequentially
+4. **Test and refine** - use the automation controls to debug
+
+### **Basic Controller Structure:**
+```json
+[
+  {
+    "action": "fill",
+    "selector": "#field-id",
+    "valueKey": "businessNameBox",
+    "label": "Business Name"
+  },
+  {
+    "action": "click",
+    "selector": "#submit-button",
+    "label": "Submit Form"
+  }
+]
+```
+
+---
+
+## 🔧 **COMPLETE ACTIONS REFERENCE**
+
+### 🔤 **fill** - Fill Text Fields
+**Purpose:** Fill input fields, textareas, and select dropdowns with data
+
+**Complete JSON Format:**
+```json
+{
+  "action": "fill",
+  "selector": "#field-id",
+  "valueKey": "businessNameBox",
+  "value": "Static Value",
+  "label": "Business Name",
+  "required": false,
+  "alternative": "fallbackValueKey",
+  "mode": "required|limit|limitBySentence|address",
+  "limitvalue": "150",
+  "blockedEmailDomains": ["mail-burst.com", "example.com"],
+  "hoursFormat": "Default|Consolidated 12Hrs|Consolidated 24Hrs|Detailed 12Hrs|Detailed 24Hrs",
+  "phoneFormat": "US|International|E164",
+  "sanitization": true,
+  "waitTimeout": 5000,
+  "delay": 500
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"fill"`
+- `selector` (required) - CSS selector for the field
+- `valueKey` (optional) - Data key from campaign data (e.g., `"businessNameBox"`)
+- `value` (optional) - Static value to fill (used if `valueKey` is not provided)
+- `label` (optional) - Human-readable description for debugging
+- `required` (optional, boolean) - Whether field is required (default: `false`)
+- `alternative` (optional) - Fallback value key or static value
+- `mode` (optional) - Special handling mode: `"required"`, `"limit"`, `"limitBySentence"`, `"address"`
+- `limitvalue` (optional, string) - Character limit for text (used with `mode: "limit"` or `mode: "limitBySentence"`)
+- `blockedEmailDomains` (optional, array) - Array of email domains to block (e.g., `["mail-burst.com"]`). If email domain matches, uses `campAlternativeEmail` instead
+- `hoursFormat` (optional, string) - Format for business hours fields. Options: `"Default"`, `"Consolidated 12Hrs"`, `"Consolidated 24Hrs"`, `"Detailed 12Hrs"`, `"Detailed 24Hrs"`. Only applies when `valueKey` is `"businessHoursBox"` or individual hour fields (`monAm`, `monPm`, etc.)
+- `phoneFormat` (optional, string) - Format for phone number fields. Options: `"US"`, `"International"`, `"E164"`. Only applies to phone-related valueKeys
+- `sanitization` (optional, boolean) - Whether to sanitize the value by removing special characters (default: `false`)
+- `waitTimeout` (optional, number) - Max wait time in milliseconds for element to appear (default: `5000`)
+- `delay` (optional, number) - Delay in milliseconds before executing this step (default: `500`)
+
+**Fill Modes:**
+
+1. **`required`** - Use fallback if main valueKey is empty
+   ```json
+   {
+     "action": "fill",
+     "selector": "#business_name",
+     "valueKey": "contactFirstNameBox",
+     "mode": "required",
+     "alternative": "firstnameAlternative"
+   }
+   ```
+
+2. **`limit`** - Truncate to exact character count
+   ```json
+   {
+     "action": "fill",
+     "selector": "#password",
+     "valueKey": "camppassword",
+     "mode": "limit",
+     "limitvalue": "15"
+   }
+   ```
+
+3. **`limitBySentence`** - Cut at last full sentence within limit
+   ```json
+   {
+     "action": "fill",
+     "selector": "#description",
+     "valueKey": "longDescriptionBox",
+     "mode": "limitBySentence",
+     "limitvalue": "150"
+   }
+   ```
+
+4. **`address`** - Smart address handling for address fields (line1, line2, city, state, zipcode)
+   ```json
+   {
+     "action": "fill",
+     "selector": "#address",
+     "valueKey": "line1",
+     "mode": "address",
+     "required": true
+   }
+   ```
+
+**Multiple ValueKey Support:**
+Combine multiple valueKeys using `" + "` separator. Values are joined with `", "` (comma and space):
+```json
+{
+  "action": "fill",
+  "selector": "#description",
+  "valueKey": "service1Box + service2Box + service3Box",
+  "label": "Combined Services"
+}
+```
+*Result: "Service 1, Service 2, Service 3"*
+
+**Multiple Alternative Support:**
+```json
+{
+  "action": "fill",
+  "selector": "#contact_person",
+  "valueKey": "contactFirstNameBox + contactLastNameBox",
+  "alternative": "firstnameAlternative + lastnameAlternative",
+  "label": "Contact Person",
+  "required": true
+}
+```
+
+**Blocked Email Domains:**
+Automatically replace blocked email domains with alternative email from `campAlternativeEmail`:
+```json
+{
+  "action": "fill",
+  "selector": "[name=\"contact_email\"]",
+  "valueKey": "campEmail",
+  "label": "Email",
+  "blockedEmailDomains": ["mail-burst.com", "tempmail.com"]
+}
+```
+
+**How it works:**
+1. System extracts domain from email (e.g., `user@mail-burst.com` → `mail-burst.com`)
+2. Checks if domain is in `blockedEmailDomains` array (case-insensitive)
+3. If blocked, replaces email with `campAlternativeEmail` from CampaignData
+4. If `campAlternativeEmail` is not available, keeps original email and logs warning
+5. Works with single valueKey and multiple valueKeys (checks first email found)
+
+**Example:**
+- Original email: `contact@mail-burst.com`
+- Blocked domains: `["mail-burst.com"]`
+- Alternative email: `contact@example.com` (from `campAlternativeEmail`)
+- Result: Field is filled with `contact@example.com`
+
+**Business Hours Formatting:**
+Use `hoursFormat` with `businessHoursBox` to format business hours:
+```json
+{
+  "action": "fill",
+  "selector": "#business-hours",
+  "valueKey": "businessHoursBox",
+  "hoursFormat": "Detailed 24Hrs",
+  "label": "Business Hours"
+}
+```
+
+**Available `hoursFormat` Options:**
+- `"Default"` - Uses raw value from `businessHoursBox` without formatting
+- `"Consolidated 12Hrs"` - Groups similar days: `Mon-Fri: 8:00 AM - 8:00 PM, Sat-Sun: Closed`
+- `"Consolidated 24Hrs"` - Groups similar days: `Mon-Fri: 08:00 - 20:00, Sat-Sun: Closed`
+- `"Detailed 12Hrs"` - Each day on new line with AM/PM: `Mon:   8:00 am - 8:00 pm`
+- `"Detailed 24Hrs"` - Each day on new line with 24-hour: `Mon:   08:00 - 20:00`
+
+**Phone Number Formatting:**
+Use `phoneFormat` with phone-related valueKeys:
+```json
+{
+  "action": "fill",
+  "selector": "#phone",
+  "valueKey": "contactTelephoneBox",
+  "phoneFormat": "US",
+  "label": "Phone Number"
+}
+```
+
+**Available `phoneFormat` Options:**
+- `"US"` - US format: `(555) 123-4567`
+- `"International"` - International format: `+1 555 123 4567`
+- `"E164"` - E.164 format: `+15551234567`
+
+**Value Sanitization:**
+Use `sanitization: true` to remove special characters:
+```json
+{
+  "action": "fill",
+  "selector": "#description",
+  "valueKey": "longDescriptionBox",
+  "sanitization": true,
+  "label": "Description"
+}
+```
+
+**Special ValueKey: `consolidatedData`**
+When `valueKey` is `"consolidatedData"`, the system automatically generates consolidated content:
+```json
+{
+  "action": "fill",
+  "selector": "#description",
+  "valueKey": "consolidatedData",
+  "label": "Business Description"
+}
+```
+
+**Special Main Category Handling:**
+For select elements with specific selectors (`[name="profession_id"]`, `[name="type_id"]`, or `#s2id_contact_10-element-14`), the system automatically looks up `mainCategory` from citations. The special "Skip Category" logic is triggered automatically based on the **value** of `mainCategory`, not a mode parameter.
+
+**Supported Category Selectors:**
+- `[name="profession_id"]` - Professional category dropdown
+- `[name="type_id"]` - Type/category dropdown (e.g., Geebo)
+- `#s2id_contact_10-element-14` - Select2 category dropdown
+
+**Automatic Skip Category Detection:**
+If the `mainCategory` value equals any of these (case-insensitive), it will automatically create/select a "Skip Category" option:
+- `"Skip Category"`
+- `"skipCategory1"`
+- `"skip category"`
+- `"skip-category"`
+
+**Example:**
+```json
+{
+  "action": "fill",
+  "selector": "[name=\"type_id\"]",
+  "valueKey": "mainCategory",
+  "label": "* Best Describes You"
+}
+```
+
+**How it works:**
+1. The system checks `controller.settings.requiredCategory` or `controller.requiredCategory` from automation configuration
+2. If `requiredCategory` is `true`, it looks up `mainCategory` from the citations array for the current domain
+3. If `requiredCategory` is `false` or `undefined`, it first tries citations, then falls back to `campaignData.mainCategoryBox`
+4. If `mainCategory` value matches any skip category variation, it creates an option with value `"0000"` and text `"Skip Category"`
+5. If `mainCategory` has any other value, it searches for a matching option using a 4-strategy approach:
+   - **Strategy 1**: Match by option VALUE (handles numeric IDs like "1", "2", etc.)
+   - **Strategy 2**: Exact text match (case-insensitive)
+   - **Strategy 3**: Partial text match
+   - **Strategy 4**: Fuzzy match (removes special characters)
+
+**Category Matching Priority:**
+The system intelligently matches categories by:
+1. **Value Match First**: If `mainCategory` is numeric (e.g., "1", "2"), it matches the option's value attribute
+2. **Text Match Fallback**: If no value match, it matches by option text using exact, partial, or fuzzy matching
+3. **Empty on No Match**: If no match is found, the field is left empty (no default selection to avoid wrong category)
+
+**Enhanced Element-Specific Fill Logic:**
+- **SELECT Elements**: Smart matching with exact value, exact text, partial text, and fuzzy matching
+- **INPUT Elements**: Direct fill with proper event dispatching (input, change, keydown, keyup)
+- **TEXTAREA Elements**: Rich text support with HTML detection for editors like Froala, CKEditor, TinyMCE
+
+---
+
+### 🖱️ **click** - Click Elements
+**Purpose:** Click buttons, links, and other clickable elements
+
+**Complete JSON Format:**
+```json
+{
+  "action": "click",
+  "selector": "#submit-button",
+  "valueKey": "NextButtonSave",
+  "label": "Submit Form",
+  "delay": 200,
+  "waitTimeout": 5000
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"click"`
+- `selector` (required) - CSS selector for the clickable element
+- `valueKey` (optional) - Special value key: `"NextButtonSave"` for page navigation handling
+- `label` (optional) - Human-readable description
+- `delay` (optional, number) - Delay in milliseconds before clicking (default: `200`)
+- `waitTimeout` (optional, number) - Max wait time for element to appear (default: `5000`)
+
+**Special Click Actions:**
+
+**NextButtonSave** - Special navigation handling with page load detection:
+```json
+{
+  "action": "click",
+  "selector": "#next-button",
+  "valueKey": "NextButtonSave",
+  "label": "Go to Next Page"
+}
+```
+
+---
+
+### 📷 **uploadImages** - Upload Images
+**Purpose:** Upload images from base64 data stored in campaign data
+
+**Complete JSON Format:**
+```json
+{
+  "action": "uploadImages",
+  "selector": "#logo-upload",
+  "valueKey": "logoBox",
+  "required": false,
+  "alternative": "logoalternative",
+  "imagesize": "200x200",
+  "label": "Upload Logo",
+  "waitTimeout": 5000
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"uploadImages"`
+- `selector` (required) - CSS selector for the file input element
+- `valueKey` (required) - Image data key from `base64Data` (e.g., `"logoBox"`, `"image1Box"`)
+- `required` (optional, boolean) - Whether image is required (default: `false`)
+- `alternative` (optional) - Fallback image key (e.g., `"logoalternative"`, `"image1alternative"`)
+- `imagesize` (optional, string) - Resize format: `"widthxheight"` (e.g., `"200x200"`)
+- `label` (optional) - Human-readable description
+- `waitTimeout` (optional, number) - Max wait time for element to appear (default: `5000`)
+
+**Multiple ValueKey Support:**
+```json
+{
+  "action": "uploadImages",
+  "selector": "#logo-upload",
+  "valueKey": "logoBox + image1Box",
+  "label": "Upload Logo or Image 1"
+}
+```
+
+**Automatic Fallback Mappings:**
+- `logoBox` → automatically tries `logoalternative`
+- `image1Box` → automatically tries `image1alternative`
+
+---
+
+### 🕒 **formatHours** - Format Business Hours (Text Fields)
+**Purpose:** Format business hours for text inputs/textarea fields with various output styles
+
+**When to use:** Use this action when the website has a **single text field** for business hours instead of individual dropdowns.
+
+**Complete JSON Format:**
+```json
+{
+  "action": "formatHours",
+  "selector": "#business-hours",
+  "valueKey": "businessHoursBox",
+  "format": "consolidated",
+  "label": "Business Hours",
+  "waitTimeout": 5000
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"formatHours"`
+- `selector` (required) - CSS selector for the business hours text field
+- `valueKey` (optional) - Data key containing business hours (default: uses individual day keys: `monAm`, `monPm`, etc.)
+- `format` (optional, string) - Format style: `"standard"`, `"24hour"`, `"compact"`, `"consolidated"`, `"detailed"`, `"simple"` (default: `"standard"`)
+- `label` (optional) - Human-readable description
+- `waitTimeout` (optional, number) - Max wait time for element to appear (default: `5000`)
+
+**Available Formats:**
+
+1. **`standard`** - Keep structure, convert times only
+   ```
+   Monday: 08:00 - 17:00
+   Tuesday: 08:00 - 17:00
+   ...
+   ```
+
+2. **`24hour`** - Convert times only (no days)
+   ```
+   08:00 - 17:00
+   ```
+
+3. **`compact`** - Remove day names, compact format
+   ```
+   08:00-17:00
+   ```
+
+4. **`consolidated`** - Group similar days (Mon-Fri: 08:00-17:00)
+   ```
+   Mon-Fri: 08:00-17:00, Sat: 09:00-13:00
+   ```
+
+5. **`detailed`** - Keep day names, clean time ranges
+   ```
+   Monday: 08:00-17:00
+   Tuesday: 08:00-17:00
+   ...
+   ```
+
+6. **`simple`** - Just times, no day names
+   ```
+   08:00 - 17:00
+   ```
+
+**Business Hours Formatting with `fill` Action:**
+You can also format business hours using the `fill` action with the `hoursFormat` parameter:
+```json
+{
+  "action": "fill",
+  "selector": "#business-hours",
+  "valueKey": "businessHoursBox",
+  "hoursFormat": "Detailed 24Hrs",
+  "label": "Business Hours"
+}
+```
+
+**Available `hoursFormat` Options:**
+1. **`Default`** - Uses the raw value from `businessHoursBox` without any formatting
+   - Example: Uses whatever value is stored in `businessHoursBox` as-is
+
+2. **`Consolidated 12Hrs`** - Groups similar days with 12-hour format (AM/PM)
+   - Example: `Mon-Fri: 8:00 AM - 8:00 PM, Sat-Sun: Closed`
+   - Example: `Mon-Sun: 8:00 AM - 8:00 PM`
+
+3. **`Consolidated 24Hrs`** - Groups similar days with 24-hour format
+   - Example: `Mon-Fri: 08:00 - 20:00, Sat-Sun: Closed`
+   - Example: `Mon-Sun: 08:00 - 20:00`
+
+4. **`Detailed 12Hrs`** - Each day on a new line with 12-hour format
+   ```
+   Mon:   8:00 am - 8:00 pm
+   Tue:   8:00 am - 8:00 pm
+   Wed:   8:00 am - 8:00 pm
+   Thu:   8:00 am - 8:00 pm
+   Fri:   8:00 am - 8:00 pm
+   Sat:   8:00 am - 8:00 pm
+   Sun:   8:00 am - 8:00 pm
+   ```
+
+5. **`Detailed 24Hrs`** - Each day on a new line with 24-hour format
+   ```
+   Mon:   08:00 - 20:00
+   Tue:   08:00 - 20:00
+   Wed:   08:00 - 20:00
+   Thu:   08:00 - 20:00
+   Fri:   08:00 - 20:00
+   Sat:   08:00 - 20:00
+   Sun:   08:00 - 20:00
+   ```
+
+**How It Works:**
+- When `valueKey` is `"businessHoursBox"` and `hoursFormat` is specified, the system automatically formats business hours from individual day keys (`monAm`, `monPm`, `tueAm`, etc.) in `flatData`
+- The format matching is case-insensitive and handles variations (e.g., "detailed12Hrs", "Detailed 12Hrs", "DETAILED 12HRS" all work)
+- For individual hour fields (`monAm`, `monPm`, etc.), `hoursFormat` can be `"12Hrs"` or `"24Hrs"` to convert single time values
+
+**Business Hours ValueKeys:**
+If `valueKey` is not provided, the system automatically uses individual day keys:
+- `monAm`, `monPm` - Monday opening/closing
+- `tueAm`, `tuePm` - Tuesday opening/closing
+- `wedAm`, `wedPm` - Wednesday opening/closing
+- `thuAm`, `thuPm` - Thursday opening/closing
+- `friAm`, `friPm` - Friday opening/closing
+- `satAm`, `satPm` - Saturday opening/closing
+- `sunAm`, `sunPm` - Sunday opening/closing
+
+---
+
+### 🧠 **consolidateData** - Consolidate Campaign Data
+**Purpose:** Process and consolidate data from campaignData using domain-specific configuration
+
+**Complete JSON Format:**
+```json
+{
+  "action": "consolidateData",
+  "label": "Consolidate Data"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"consolidateData"`
+- `label` (optional) - Human-readable description
+
+**Note:** This action does not require a `selector`. It processes data and makes it available for subsequent steps (e.g., `injectToFroala` or `fill` with `valueKey: "consolidatedData"`).
+
+---
+
+### ✍️ **injectToFroala** - Inject to Rich Text Editor
+**Purpose:** Insert consolidated data into Froala rich text editor
+
+**Complete JSON Format:**
+```json
+{
+  "action": "injectToFroala",
+  "label": "Inject to Rich Editor"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"injectToFroala"`
+- `label` (optional) - Human-readable description
+
+**Note:** This action does not require a `selector`. It automatically finds the Froala editor on the page and injects the consolidated data.
+
+---
+
+### 🌐 **GoTo** - Navigate to URL
+**Purpose:** Navigate to a different URL during automation
+
+**Complete JSON Format:**
+```json
+{
+  "action": "GoTo",
+  "link": "https://example.com/next-page",
+  "label": "Go to Next Page"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"GoTo"`
+- `link` (required, string) - Full URL to navigate to
+- `label` (optional) - Human-readable description
+
+**Note:** The system automatically saves the resume index before navigation to allow resuming from the next step.
+
+---
+
+### 🧹 **initClearCheckbox** - Clear All Checkboxes
+**Purpose:** Clear all checkboxes on the page before selecting new ones
+
+**Complete JSON Format:**
+```json
+{
+  "action": "initClearCheckbox",
+  "label": "Clear All Checkboxes"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"initClearCheckbox"`
+- `label` (optional) - Human-readable description
+
+**Note:** This action does not require a `selector`. It clears all checkboxes on the page before other checkbox actions (e.g., `tickPaymentMethods`, `tickSubcategory`).
+
+---
+
+### ☑️ **tickPaymentMethods** - Select Payment Methods
+**Purpose:** Automatically select payment method checkboxes based on campaign data
+
+**Complete JSON Format:**
+```json
+{
+  "action": "tickPaymentMethods",
+  "label": "Select Payment Methods"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"tickPaymentMethods"`
+- `label` (optional) - Human-readable description
+
+**Note:** This action does not require a `selector`. It automatically finds and selects payment method checkboxes based on:
+- Checkbox labels containing payment method keywords
+- Elements within payment-related sections
+- Supported payment methods: credit card, debit card, cash, digital wallet, PayPal, Stripe, Apple Pay, Google Pay, Venmo, Zelle, Bitcoin, check, etc.
+
+---
+
+### ✅ **tickSubcategory** - Select Subcategories
+**Purpose:** Select subcategory checkboxes based on exact matches from campaign data
+
+**Complete JSON Format:**
+```json
+{
+  "action": "tickSubcategory",
+  "label": "Select Subcategories"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"tickSubcategory"`
+- `label` (optional) - Human-readable description
+
+**Note:** This action does not require a `selector`. It automatically:
+1. Finds `subCategory` or `subcategory` from citations data for the current domain
+2. Searches for checkboxes in `ul.list-of-sub-categories` containers
+3. Matches checkbox labels or `data-name` attributes exactly (case-insensitive)
+4. Selects matching checkboxes
+
+---
+
+### ⏰ **selectHours** - Select Business Hours (Dropdowns)
+**Purpose:** Select business hours from dropdown menus with automatic 12h→24h conversion
+
+**Note:** This action is documented but may be handled through the `fill` action with individual hour valueKeys. Use `fill` with `valueKey: "monAm"`, `"monPm"`, etc. for dropdown selection.
+
+**Complete JSON Format:**
+```json
+{
+  "action": "selectHours",
+  "selector": "#monday-opening",
+  "valueKey": "monAm",
+  "label": "Monday Opening"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"selectHours"`
+- `selector` (required) - CSS selector for the hours dropdown
+- `valueKey` (required) - Business hours key: `"monAm"`, `"monPm"`, `"tueAm"`, `"tuePm"`, etc.
+- `label` (optional) - Human-readable description
+
+**Business Hours ValueKeys:**
+- `monAm`, `monPm` - Monday opening/closing
+- `tueAm`, `tuePm` - Tuesday opening/closing
+- `wedAm`, `wedPm` - Wednesday opening/closing
+- `thuAm`, `thuPm` - Thursday opening/closing
+- `friAm`, `friPm` - Friday opening/closing
+- `satAm`, `satPm` - Saturday opening/closing
+- `sunAm`, `sunPm` - Sunday opening/closing
+
+**Note:** The system automatically converts 12-hour format (e.g., "8:00 AM") to 24-hour format (e.g., "08:00") for dropdown selection.
+
+---
+
+### ⏳ **waitForPopup** - Wait for Element
+**Purpose:** Wait for a specific element to appear (popup, modal, etc.)
+
+**Complete JSON Format:**
+```json
+{
+  "action": "waitForPopup",
+  "selector": ".modal-dialog",
+  "value": "15000",
+  "label": "Wait for Modal"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"waitForPopup"`
+- `selector` (required) - CSS selector for the element to wait for
+- `value` (optional, string) - Maximum wait time in milliseconds (default: `"15000"`)
+- `label` (optional) - Human-readable description
+
+---
+
+### 💡 **richFill** - Advanced Rich Text Fill
+**Purpose:** Advanced fill for rich editors, supports consolidated data
+
+**Note:** This action may be handled through the `fill` action with `valueKey: "consolidatedData"`. The system automatically detects rich text editors (Froala, CKEditor, TinyMCE) and handles HTML content appropriately.
+
+**Complete JSON Format:**
+```json
+{
+  "action": "richFill",
+  "selector": ".fr-element.fr-view",
+  "valueKey": "consolidatedData",
+  "label": "Rich Text Fill"
+}
+```
+
+**Parameters:**
+- `action` (required) - Must be `"richFill"`
+- `selector` (required) - CSS selector for the rich text editor
+- `valueKey` (optional) - Data key, typically `"consolidatedData"`
+- `label` (optional) - Human-readable description
+
+---
+
+## 🔄 **FALLBACK SYSTEM**
+
+### **Overview**
+The fallback system ensures that required fields always have valid data, even when the primary data source is empty. This prevents form submission failures and maintains data quality.
+
+### **How It Works**
+Use the `alternative` parameter in any step to specify a fallback valueKey. If the main `valueKey` is empty, the system will automatically try the `alternative` valueKey.
+
+### **Fallback Priority:**
+1. Main `valueKey` from campaign data
+2. Hardcoded alternative mappings (if any)
+3. Step-level `alternative` parameter
+4. Multiple alternatives (if `alternative` contains `" + "`)
+
+### **Fallback Examples**
+
+**Services Fallback:**
+```json
+{
+  "action": "fill",
+  "selector": "#services",
+  "valueKey": "servicesBox",
+  "label": "Services",
+  "required": true,
+  "alternative": "businessNameBox"
+}
+```
+
+**Mobile/Telephone Cross-Fallback:**
+```json
+{
+  "action": "fill",
+  "selector": "#mobile",
+  "valueKey": "mobileNumberBox",
+  "label": "Mobile Number",
+  "alternative": "contactTelephoneBox"
+},
+{
+  "action": "fill",
+  "selector": "#telephone", 
+  "valueKey": "contactTelephoneBox",
+  "label": "Telephone",
+  "alternative": "mobileNumberBox"
+}
+```
+
+**Email Fallback:**
+```json
+{
+  "action": "fill",
+  "selector": "#email",
+  "valueKey": "contactEmailBox",
+  "label": "Email",
+  "required": true,
+  "alternative": "businessNameBox"
+}
+```
+
+**Multiple Alternative Keys:**
+```json
+{
+  "action": "fill",
+  "selector": "#contact_person",
+  "valueKey": "contactFirstNameBox + contactLastNameBox",
+  "alternative": "firstnameAlternative + lastnameAlternative",
+  "label": "Contact Person",
+  "required": true
+}
+```
+
+### **Available Alternative ValueKeys**
+You can use any valueKey as an alternative, including:
+- `businessNameBox` - Business name
+- `contactTelephoneBox` - Telephone number
+- `mobileNumberBox` - Mobile number
+- `contactEmailBox` - Email address
+- `websiteBox` - Website URL
+- `longDescriptionBox` - Description
+- `addressBox` - Address
+- `mainCategory` - Business category
+- And any other valueKey from your campaign data
+
+---
+
+## 📊 **COMPLETE DATA FIELD MAPPINGS**
+
+### **Main Business Fields:**
+| Field | ValueKey | Description |
+|-------|----------|-------------|
+| Business Name | `businessNameBox` | Company name |
+| Website | `websiteBox` | Website URL |
+| Email | `campEmail` | Contact email |
+| Contact First Name | `contactFirstNameBox` | First name |
+| Contact Last Name | `contactLastNameBox` | Last name |
+| Contact Telephone | `contactTelephoneBox` | Phone number |
+| Mobile Number | `mobileNumberBox` | Mobile phone |
+| Short Description | `shortDescriptionBox` | Brief description |
+| Long Description | `longDescriptionBox` | Detailed description |
+| Services | `servicesBox` | List of services |
+| Employees | `employeesBox` | Number of employees |
+| Business Hours | `businessHoursBox` | Operating hours (use `hoursFormat` parameter for formatting) |
+| Main Category | `mainCategoryBox` | Primary business category |
+| Year Formed | `yearFormationBox` | Company formation year |
+| Password (Directories) | `passDirectory` | Directory password |
+| Password (Campaign) | `camppassword` | Campaign password |
+
+### **Address Fields:**
+| Field | ValueKey | Description |
+|-------|----------|-------------|
+| Address Line 1 | `line1` | Street address |
+| Address Line 2 | `line2` | Additional address |
+| City | `city` | City name |
+| State | `state` | State name |
+| State Abbreviation | `stateAbbr` | State code |
+| Zipcode | `zipcode` | Postal code |
+| Country | `country` | Country name |
+| Country Abbreviation | `countryAbbr` | Country code |
+| Full Address | `addressBox` | Complete address |
+
+### **Social Media Fields:**
+| Field | ValueKey | Description |
+|-------|----------|-------------|
+| Facebook | `facebookBox` | Facebook URL |
+| Twitter | `twitterBox` | Twitter URL |
+| Instagram | `instagramBox` | Instagram URL |
+| LinkedIn | `linkedinBox` | LinkedIn URL |
+| YouTube | `youtubeBox` | YouTube URL |
+| TikTok | `tiktokBox` | TikTok URL |
+| Pinterest | `pinterestBox` | Pinterest URL |
+
+### **Image Fields:**
+| Field | ValueKey | Alternative | Description |
+|-------|----------|-------------|-------------|
+| Logo | `logoBox` | `logoalternative` | Company logo |
+| Image 1 | `image1Box` | `image1alternative` | First image/banner |
+| Image 2 | `image2Box` | - | Second image |
+| Image 3 | `image3Box` | - | Third image |
+
+### **Business Hours (Individual):**
+| Field | ValueKey | Description |
+|-------|----------|-------------|
+| Monday Morning | `monAm` | Monday opening time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Monday Afternoon | `monPm` | Monday closing time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Tuesday Morning | `tueAm` | Tuesday opening time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Tuesday Afternoon | `tuePm` | Tuesday closing time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Wednesday Morning | `wedAm` | Wednesday opening time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Wednesday Afternoon | `wedPm` | Wednesday closing time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Thursday Morning | `thuAm` | Thursday opening time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Thursday Afternoon | `thuPm` | Thursday closing time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Friday Morning | `friAm` | Friday opening time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Friday Afternoon | `friPm` | Friday closing time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Saturday Morning | `satAm` | Saturday opening time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Saturday Afternoon | `satPm` | Saturday closing time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Sunday Morning | `sunAm` | Sunday opening time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+| Sunday Afternoon | `sunPm` | Sunday closing time (use `hoursFormat: "12Hrs"` or `"24Hrs"` for conversion) |
+
+### **Special ValueKeys:**
+| Field | ValueKey | Description |
+|-------|----------|-------------|
+| Consolidated Data | `consolidatedData` | Pre-processed consolidated content |
+| Next Button Save | `NextButtonSave` | Special navigation handling |
+| Upload Button | `UploadButton` | File upload trigger |
+| Upload Button Save | `UploadButtonSave` | File upload confirmation |
+
+### **Alternative ValueKeys:**
+| Field | ValueKey | Description |
+|-------|----------|-------------|
+| First Name Alternative | `firstnameAlternative` | Fallback first name |
+| Last Name Alternative | `lastnameAlternative` | Fallback last name |
+| Logo Alternative | `logoalternative` | Fallback logo |
+| Image 1 Alternative | `image1alternative` | Fallback image 1 |
+
+---
+
+## 🔒 **DOMAIN DETECTION & AUTHORITY SYSTEM**
+
+### **Overview**
+The automation system includes built-in domain detection to prevent random triggering on unsupported sites. This ensures automation only runs on domains that have been explicitly configured.
+
+### **How It Works**
+1. **Domain Validation**: The system checks if the current domain matches the `domainName` in automation collections
+2. **Authority Handling**: Validates against both `automationSteps` (user collection) and `automationTask` (admin/collaborator collection)
+3. **Fallback Prevention**: Prevents automation from running on unsupported domains
+
+### **Domain Matching Rules**
+- **Exact Match**: `example.com` matches `example.com`
+- **WWW Handling**: `www.example.com` matches `example.com` (and vice versa)
+- **Case Insensitive**: `EXAMPLE.COM` matches `example.com`
+- **Subdomain Support**: `app.example.com` matches `example.com`
+- **Parent Domain**: `example.com` matches `app.example.com`
+
+### **Error Handling**
+- **Unsupported Domain**: Automation silently skips (no modal shown)
+- **Domain Mismatch**: Shows error and prevents automation
+- **Missing Automation**: Logs warning and continues
+
+---
+
+## 🎯 **CONTROLLER CREATION WORKFLOW**
+
+### **Step 1: Analyze the Target Site**
+1. **Inspect form fields** - Right-click → Inspect Element
+2. **Identify field types** - Input, select, textarea, file upload
+3. **Note selectors** - ID, class, name attributes
+4. **Check for special elements** - Select2, modals, dynamic content
+
+### **Step 2: Create Basic Structure**
+```json
+[
+  {
+    "action": "fill",
+    "selector": "#business-name",
+    "valueKey": "businessNameBox",
+    "label": "Business Name"
+  }
+]
+```
+
+### **Step 3: Add Field Mappings**
+- Map each form field to appropriate `valueKey`
+- Use `label` for debugging and documentation
+- Add `required: true` for mandatory fields
+
+### **Step 4: Handle Special Cases**
+- **Dropdowns:** Use `fill` with appropriate `valueKey` for time fields
+- **Images:** Use `uploadImages` for file uploads
+- **Checkboxes:** Use `tickPaymentMethods` or `tickSubcategory`
+- **Navigation:** Use `GoTo` for page changes or `click` with `NextButtonSave`
+
+### **Step 5: Test and Debug**
+- Use automation controls to test each step
+- Check console logs for errors
+- Adjust selectors and parameters as needed
+
+---
+
+## 🔍 **COMMON SELECTOR PATTERNS**
+
+### **CSS Selectors:**
+```json
+// By ID
+"selector": "#field-id"
+
+// By class
+"selector": ".field-class"
+
+// By name attribute
+"selector": "[name='field-name']"
+
+// By placeholder
+"selector": "input[placeholder='Enter name']"
+
+// Complex selectors
+"selector": "form .row .col-md-6 input[name='email']"
+```
+
+### **Select2 Dropdowns:**
+```json
+// Select2 container
+"selector": "#s2id_field-id"
+
+// Original select (if accessible)
+"selector": "select[name='field-name']"
+```
+
+---
+
+## ⚠️ **BEST PRACTICES**
+
+### **Selector Reliability:**
+- **Prefer IDs** over classes when possible
+- **Use name attributes** for form fields
+- **Avoid dynamic classes** that change
+- **Test selectors** in browser console
+
+### **Error Handling:**
+- **Add labels** to all steps for debugging
+- **Use required: true** for critical fields
+- **Provide alternatives** for important data
+- **Set appropriate timeouts** for slow-loading elements
+
+### **Performance:**
+- **Order steps logically** - fill forms before clicking submit
+- **Use appropriate delays** - balance speed with reliability
+- **Minimize retries** - use correct selectors to avoid retries
+- **Group related actions** together
+
+### **Maintenance:**
+- **Document complex logic** in comments
+- **Use descriptive labels** for all steps
+- **Test after site updates** - selectors may change
+- **Keep backups** of working configurations
+
+---
+
+## 🚀 **EXAMPLE COMPLETE CONTROLLER**
+
+```json
+[
+  {
+    "action": "fill",
+    "selector": "#business-name",
+    "valueKey": "businessNameBox",
+    "label": "Business Name",
+    "required": true
+  },
+  {
+    "action": "fill",
+    "selector": "#email",
+    "valueKey": "campEmail",
+    "label": "Email Address",
+    "required": true
+  },
+  {
+    "action": "fill",
+    "selector": "#phone",
+    "valueKey": "contactTelephoneBox",
+    "alternative": "mobileNumberBox",
+    "label": "Phone Number"
+  },
+  {
+    "action": "fill",
+    "selector": "#address",
+    "valueKey": "line1",
+    "mode": "address",
+    "label": "Address"
+  },
+  {
+    "action": "fill",
+    "selector": "#opening-time",
+    "valueKey": "monAm",
+    "hoursFormat": "24Hrs",
+    "label": "Opening Time"
+  },
+  {
+    "action": "fill",
+    "selector": "#business-hours",
+    "valueKey": "businessHoursBox",
+    "hoursFormat": "Detailed 24Hrs",
+    "label": "Business Hours"
+  },
+  {
+    "action": "fill",
+    "selector": "#phone",
+    "valueKey": "contactTelephoneBox",
+    "phoneFormat": "US",
+    "label": "Phone Number (Formatted)"
+  },
+  {
+    "action": "uploadImages",
+    "selector": "#logo-upload",
+    "valueKey": "logoBox",
+    "alternative": "logoalternative",
+    "imagesize": "200x200",
+    "label": "Upload Logo"
+  },
+  {
+    "action": "tickPaymentMethods",
+    "label": "Select Payment Methods"
+  },
+  {
+    "action": "click",
+    "selector": "#submit-button",
+    "label": "Submit Form"
+  }
+]
+```
+
+---
+
+## 🚀 **ADVANCED FEATURES**
+
+### **Multiple ValueKey Support**
+Combine multiple data sources using the `" + "` separator:
+```json
+{
+  "action": "fill",
+  "selector": "#description",
+  "valueKey": "service1Box + service2Box + service3Box",
+  "label": "Combined Services"
+}
+```
+
+### **Smart Element Detection**
+The system automatically detects element types and uses appropriate fill methods:
+- **SELECT Elements**: Smart matching with exact, partial, and fuzzy matching
+- **INPUT Elements**: Direct fill with proper event dispatching
+- **TEXTAREA Elements**: Rich text support with HTML detection
+
+### **Enhanced Error Handling**
+- **Retry Logic**: Automatic retry for failed steps (3 retries for optional, 5 for required)
+- **Alternative Selectors**: Automatic fallback selectors for name fields
+- **Progressive Delays**: Increasing delays for required fields
+- **Element Highlighting**: Visual feedback during automation
+
+---
+
+## 🆘 **TROUBLESHOOTING**
+
+### **Common Issues:**
+
+**Element Not Found:**
+- Check selector in browser console: `document.querySelector("#selector")`
+- Try alternative selectors
+- Add `waitTimeout` parameter
+- Use browser dev tools to verify element exists
+
+**Data Not Filling:**
+- Verify `valueKey` exists in campaign data
+- Check for typos in field names
+- Use `alternative` parameter for fallbacks
+- Check console logs for data availability
+
+**Upload Failures:**
+- Ensure image data exists in `base64Data` storage
+- Check file input selector
+- Verify image format and size
+- Use `imagesize` parameter for resizing
+
+**Navigation Issues:**
+- Use `NextButtonSave` for special navigation
+- Add delays for slow-loading pages
+- Use `GoTo` for explicit navigation
+- Check for form submission detection
+
+**Domain Issues:**
+- Verify domain is in supported list
+- Check domain authority validation
+- Ensure automation exists for domain
+- Review console logs for domain errors
+
+### **Debugging Tips:**
+1. **Check Console Logs**: Look for error messages and warnings
+2. **Use Browser Dev Tools**: Inspect elements and network requests
+3. **Test Selectors**: Verify selectors work in console
+4. **Check Data**: Verify campaign data is loaded correctly
+5. **Domain Validation**: Ensure domain is supported
+
+---
+
+## 📚 **ADDITIONAL RESOURCES**
+
+### **File Locations:**
+- **Controllers**: `public/automation/{domain}.json`
+- **Configuration**: `public/automation/consoSetup.json`
+- **Background Script**: `src/background.ts`
+- **Content Script**: `public/content.js`
+
+### **Key Functions:**
+- `isDomainSupported()` - Domain validation
+- `tickPaymentMethodCheckboxes()` - Payment method selection
+- `tickSubcategoryCheckboxes()` - Subcategory selection
+- `consolidateData()` - Data consolidation
+- `injectToFroala()` - Rich text injection
+
+### **System Integration:**
+- **Firebase Integration**: Real-time data sync
+- **Chrome Storage**: Local data persistence
+- **IndexedDB**: High-performance data storage
+- **Role-Based Access**: User/admin permissions
+
+---
+
+**🎯 Ready to create your controller? Start with the basic structure and build step by step!**
