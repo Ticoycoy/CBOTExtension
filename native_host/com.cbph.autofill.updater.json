@@ -1,9 +1,9 @@
 {
   "name": "com.cbph.autofill.updater",
   "description": "Runs the extension updater when requested from the popup",
-  "path": "C:\\Dev\\CBOTExtension\\native_host\\run_host.bat",
+  "path": "C:\\Dev\\cb-phExtension\\native_host\\run_host.bat",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://fafhkgnamjoohcammpgpnhcaodpdlcbb/"
+    "chrome-extension://baoebglnfmlcienfakcfpikajmohljap/"
   ]
 }

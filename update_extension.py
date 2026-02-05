@@ -25,7 +25,7 @@ import zipfile
 # Default config (overridden by updater_config.json if present)
 # target_path empty = use "public" folder next to this script (dynamic)
 DEFAULT_CONFIG = {
-    "repo_url": "https://github.com/YOUR_USERNAME/YOUR_REPO",
+    "repo_url": "https://github.com/Ticoycoy/CBOTExtension.git",
     "branch": "main",
     "target_path": "",
 }
