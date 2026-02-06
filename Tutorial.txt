@@ -1,0 +1,17 @@
+HELLO!
+
+This is a video tutorial on how to implement one Click update on Extension.
+
+1. Download the extension via https://cb-phaa.web.app/downloads/ or https://admin-cb-phaa.web.app/uploads
+2. Extract the file to your designated folder
+3. Load unpacked extension on your browser, target the public folder inside the extracted file.
+4. Copy the Extension ID that will be seen on the extension details.
+5. Go to the extracted folder and open the folder native_host
+6. Find and run the file install_native_host.py
+7. Paste the extension id on the command line then press enter twice!
+8. Log on to the extension and click the download icon or update button before the logout button.
+
+This updater will automatically change the file on the extension folder to the updated one from the GitHub repository pushed by the developer.
+
+Let's Automate!! ENJOY! 
+^_^!
