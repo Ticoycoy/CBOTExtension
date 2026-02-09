@@ -38,13 +38,16 @@ def send_message(msg):
     sys.stdout.buffer.flush()
 
 
-def run_update():
-    """Run update_extension.py and return success, message."""
+def run_update(target_path=None):
+    """Run update_extension.py and return success, message. Pass target_path from extension if provided."""
     if not os.path.isfile(UPDATER_SCRIPT):
         return False, "update_extension.py not found next to native_host folder"
+    cmd = [sys.executable, UPDATER_SCRIPT]
+    if target_path and isinstance(target_path, str) and target_path.strip():
+        cmd.extend(["--target-path", target_path.strip()])
     try:
         result = subprocess.run(
-            [sys.executable, UPDATER_SCRIPT],
+            cmd,
             cwd=UPDATER_DIR,
             capture_output=True,
             text=True,
@@ -66,7 +69,8 @@ def main():
             return
         action = (msg.get("action") or "").strip().lower()
         if action == "run_update":
-            success, message = run_update()
+            target_path = msg.get("target_path")
+            success, message = run_update(target_path=target_path)
             send_message({"success": success, "message": message})
         else:
             send_message({"success": False, "message": f"Unknown action: {action}"})

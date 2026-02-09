@@ -5,15 +5,15 @@ to your local "Load unpacked" path. No git or Node.js required on the client.
 
 Usage:
   1. Edit updater_config.json: set repo_url (and optionally branch, target_path).
-  2. Run: python update_extension.py
+  2. Run: python update_extension.py [--target-path "C:\\path\\to\\extension"]
+  3. Or from the extension Update button (native host passes --target-path when set).
 
-target_path: If omitted or empty, defaults to the "public" folder next to this
-script (e.g. C:\\Dev\\extension-app\\public when the script is in C:\\Dev\\extension-app).
-Set target_path only if your "Load unpacked" folder is elsewhere.
+target_path: From --target-path, or updater_config.json, or defaults to public/ next to this script.
 
 After running, reload the extension in chrome://extensions.
 """
 
+import argparse
 import json
 import os
 import shutil
@@ -121,10 +121,14 @@ def copy_public_to_target(archive_dir, target_path):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Extension updater: download repo and copy public/ to target.")
+    parser.add_argument("--target-path", type=str, default="", help="Override target path (e.g. from extension popup)")
+    args = parser.parse_args()
+
     config = load_config()
     repo_url = config.get("repo_url", "").strip()
     branch = (config.get("branch") or "main").strip()
-    target_path = (config.get("target_path") or "").strip()
+    target_path = (args.target_path or config.get("target_path") or "").strip()
 
     if not repo_url or "YOUR_USERNAME" in repo_url or "YOUR_REPO" in repo_url:
         print("Please edit updater_config.json and set repo_url to your GitHub repo (e.g. https://github.com/username/repo)")
