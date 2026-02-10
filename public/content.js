@@ -2285,198 +2285,6 @@
       console.log("🔄 Automation state reset");
     }
   
-    // --- Selector Grabber (shared: runtime message + window postMessage) ---
-    function runSelectorGrabberToggle(sendResponseCb) {
-      if (window.__CBPHAA_SELECTOR_GRABBER_ACTIVE__) {
-        window.__CBPHAA_SELECTOR_GRABBER_ACTIVE__ = false;
-        if (window.__CBPHAA_GRABBER_CLEANUP__) window.__CBPHAA_GRABBER_CLEANUP__();
-        if (sendResponseCb) sendResponseCb({ success: true, active: false });
-        return;
-      }
-      window.__CBPHAA_SELECTOR_GRABBER_ACTIVE__ = true;
-      var overlay = document.createElement("div");
-      overlay.id = "cbph-selector-grabber-overlay";
-      overlay.style.cssText = "position:fixed;inset:0;z-index:2147483646;pointer-events:auto;cursor:crosshair;background:rgba(0,0,0,0.05);";
-      var highlight = document.createElement("div");
-      highlight.id = "cbph-selector-grabber-highlight";
-      highlight.style.cssText = "position:fixed;pointer-events:none;z-index:2147483645;border:2px solid #56ab2f;background:rgba(86,171,47,0.15);box-sizing:border-box;border-radius:2px;transition:top 0.05s,left 0.05s,width 0.05s,height 0.05s;";
-      var tooltip = document.createElement("div");
-      tooltip.id = "cbph-selector-grabber-tooltip";
-      tooltip.style.cssText = "position:fixed;pointer-events:none;z-index:2147483647;background:#333;color:#fff;font:11px/1.2 sans-serif;padding:4px 8px;border-radius:4px;white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis;";
-      document.body.appendChild(overlay);
-      document.body.appendChild(highlight);
-      document.body.appendChild(tooltip);
-      highlight.style.display = "none";
-      tooltip.style.display = "none";
-      function getElementAtPoint(x, y) {
-        overlay.style.pointerEvents = "none";
-        var el = document.elementFromPoint(x, y);
-        overlay.style.pointerEvents = "auto";
-        return el && el !== overlay && el !== highlight && el !== tooltip ? el : null;
-      }
-      function escapeCssId(id) {
-        if (!id) return "";
-        return id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-      }
-      function getSimpleSelector(el) {
-        if (!el || el.nodeType !== 1) return "";
-        var tag = el.tagName.toLowerCase();
-        if (el.id && /^[a-zA-Z][\w-]*$/.test(el.id)) return tag + "#" + escapeCssId(el.id);
-        var parts = [tag];
-        if (el.className && typeof el.className === "string") {
-          var classes = el.className.trim().split(/\s+/).filter(Boolean);
-          classes.slice(0, 3).forEach(function(c) { if (/^[\w-]+$/.test(c)) parts.push("." + c); });
-        }
-        return parts.join("");
-      }
-      function getSelectorPath(el) {
-        if (!el || el.nodeType !== 1) return "";
-        var tag = el.tagName.toLowerCase();
-        var nth = 1;
-        var sib = el.previousElementSibling;
-        while (sib) { if (sib.tagName === el.tagName) nth++; sib = sib.previousElementSibling; }
-        return tag + ":nth-of-type(" + nth + ")";
-      }
-      function countMatches(selector) {
-        try { return document.querySelectorAll(selector).length; } catch (e) { return 0; }
-      }
-      function getUniqueSelector(target) {
-        if (!target || target.nodeType !== 1) return { selector: "", duplicate: false };
-        var simple = getSimpleSelector(target);
-        if (countMatches(simple) <= 1) return { selector: simple, duplicate: false };
-        var path = [], current = target;
-        while (current && current !== document.body) {
-          path.unshift(getSelectorPath(current));
-          if (countMatches(path.join(" > ")) === 1) return { selector: path.join(" > "), duplicate: true };
-          current = current.parentElement;
-        }
-        return { selector: simple, duplicate: true };
-      }
-      function getAllAttributes(el) {
-        if (!el || el.nodeType !== 1) return {};
-        var o = {};
-        for (var i = 0; i < el.attributes.length; i++) { var a = el.attributes[i]; o[a.name] = a.value; }
-        return o;
-      }
-      function escapeHtml(s) {
-        var d = document.createElement("div");
-        d.textContent = s;
-        return d.innerHTML;
-      }
-      function showResultPanel(data) {
-        var existingBackdrop = document.getElementById("cbph-selector-grabber-modal-backdrop");
-        var existingPanel = document.getElementById("cbph-selector-grabber-result");
-        if (existingBackdrop) existingBackdrop.remove();
-        if (existingPanel) existingPanel.remove();
-        var backdrop = document.createElement("div");
-        backdrop.id = "cbph-selector-grabber-modal-backdrop";
-        backdrop.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;";
-        var panel = document.createElement("div");
-        panel.id = "cbph-selector-grabber-result";
-        panel.style.cssText = "position:relative;z-index:2147483647;width:100%;max-width:480px;max-height:85vh;overflow:hidden;background:#fff;color:#333;font:12px/1.4 sans-serif;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);display:flex;flex-direction:column;";
-        var dupNote = data.duplicate ? "<div style='color:#e65100;font-size:11px;margin-bottom:8px;'>Duplicate elements found – selector uses parent path for uniqueness.</div>" : "";
-        var attrRows = Object.keys(data.attributes).map(function(k) {
-          var v = String(data.attributes[k]);
-          var short = v.length > 60 ? v.substring(0, 60) + "…" : v;
-          return "<div style='display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#f5f5f5;border-radius:4px;margin-bottom:4px;'>" +
-            "<span style='font-weight:600;color:#1565c0;font-size:11px;'>" + escapeHtml(k) + "</span>" +
-            "<span style='font-family:monospace;font-size:11px;word-break:break-all;max-width:70%;'>" + escapeHtml(short) + "</span>" +
-            "<button type='button' class='cbph-attr-copy' data-value='" + escapeHtml(v).replace(/'/g, "&#39;") + "' style='background:none;border:none;cursor:pointer;padding:2px;margin-left:4px;' title='Copy value'>⎘</button>" +
-            "</div>";
-        }).join("");
-        panel.innerHTML =
-          "<div style='display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e0e0e0;background:#fafafa;border-radius:12px 12px 0 0;'>" +
-          "<span style='font-weight:700;font-size:14px;color:#333;'>Selector - Press ESC to cancel selector grabber</span>" +
-          "<button type='button' id='cbph-grabber-close' style='background:none;border:none;cursor:pointer;padding:4px;font-size:18px;line-height:1;color:#666;' title='Close'>×</button>" +
-          "</div>" +
-          "<div style='padding:16px;overflow:auto;flex:1;'>" +
-          "<div style='font-weight:600;font-size:11px;color:#666;margin-bottom:6px;'>CSS Selector</div>" +
-          "<div style='display:flex;align-items:center;gap:8px;margin-bottom:12px;'>" +
-          "<div style='flex:1;word-break:break-all;background:#f5f5f5;padding:8px 10px;border-radius:6px;font-family:monospace;font-size:12px;'>" + escapeHtml(data.selector) + "</div>" +
-          "<button type='button' id='cbph-grabber-copy' style='padding:8px 12px;background:#56ab2f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;' title='Copy selector'>Copy</button>" +
-          "</div>" + dupNote +
-          "<div style='font-weight:600;font-size:11px;color:#666;margin-bottom:6px;'>Tag</div>" +
-          "<div style='margin-bottom:12px;font-family:monospace;font-size:12px;'>" + escapeHtml(data.tagName) + "</div>" +
-          "<div style='font-weight:600;font-size:11px;color:#666;margin-bottom:6px;'>Attributes</div>" +
-          "<div style='max-height:200px;overflow:auto;'>" + (attrRows || "<div style='color:#999;font-size:11px;'>No attributes</div>") + "</div>" +
-          "</div>";
-        backdrop.appendChild(panel);
-        document.body.appendChild(backdrop);
-        document.getElementById("cbph-grabber-copy").onclick = function() {
-          try {
-            navigator.clipboard.writeText(data.selector);
-            this.textContent = "Copied!";
-            var t = this;
-            setTimeout(function() { t.textContent = "Copy"; }, 1500);
-          } catch (e) {}
-        };
-        document.getElementById("cbph-grabber-close").onclick = function() { backdrop.remove(); };
-        backdrop.onclick = function(e) { if (e.target === backdrop) backdrop.remove(); };
-        panel.onclick = function(e) { e.stopPropagation(); };
-        var attrCopyBtns = panel.querySelectorAll(".cbph-attr-copy");
-        for (var i = 0; i < attrCopyBtns.length; i++) {
-          (function(btn) {
-            var val = btn.getAttribute("data-value");
-            if (val) btn.onclick = function() {
-              try {
-                navigator.clipboard.writeText(val);
-                btn.textContent = "✓";
-                setTimeout(function() { btn.textContent = "⎘"; }, 800);
-              } catch (e) {}
-            };
-          })(attrCopyBtns[i]);
-        }
-      }
-      function onMove(e) {
-        var el = getElementAtPoint(e.clientX, e.clientY);
-        if (!el) { highlight.style.display = "none"; tooltip.style.display = "none"; return; }
-        var r = el.getBoundingClientRect();
-        highlight.style.display = "block";
-        highlight.style.left = r.left + "px";
-        highlight.style.top = r.top + "px";
-        highlight.style.width = r.width + "px";
-        highlight.style.height = r.height + "px";
-        var tag = el.tagName.toLowerCase();
-        var id = el.id ? "#" + el.id : "";
-        var cls = el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/)[0] : "";
-        tooltip.textContent = tag + id + (cls ? cls : "");
-        tooltip.style.display = "block";
-        tooltip.style.left = (r.left + r.width / 2 - tooltip.offsetWidth / 2) + "px";
-        tooltip.style.top = (r.top - tooltip.offsetHeight - 6) + "px";
-        if (tooltip.offsetTop < 4) tooltip.style.top = (r.bottom + 6) + "px";
-      }
-      function onClick(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        var el = getElementAtPoint(e.clientX, e.clientY);
-        if (!el) return;
-        var result = getUniqueSelector(el);
-        var attrs = getAllAttributes(el);
-        showResultPanel({ selector: result.selector, duplicate: result.duplicate, tagName: el.tagName.toLowerCase(), attributes: attrs });
-      }
-      function onKey(e) {
-        if (e.key === "Escape") {
-          window.__CBPHAA_SELECTOR_GRABBER_ACTIVE__ = false;
-          if (window.__CBPHAA_GRABBER_CLEANUP__) window.__CBPHAA_GRABBER_CLEANUP__();
-        }
-      }
-      overlay.addEventListener("mousemove", onMove);
-      overlay.addEventListener("click", onClick, true);
-      document.addEventListener("keydown", onKey);
-      window.__CBPHAA_GRABBER_CLEANUP__ = function() {
-        overlay.remove();
-        highlight.remove();
-        tooltip.remove();
-        document.removeEventListener("keydown", onKey);
-        var p = document.getElementById("cbph-selector-grabber-result");
-        if (p) p.remove();
-        var b = document.getElementById("cbph-selector-grabber-modal-backdrop");
-        if (b) b.remove();
-        window.__CBPHAA_GRABBER_CLEANUP__ = null;
-      };
-      if (sendResponseCb) sendResponseCb({ success: true, active: true });
-    }
-
     // --- Automation Control Setup ---
     function setupControls() {
       AUTOMATION_STATE.set({
@@ -2773,7 +2581,221 @@
             sendResponse && sendResponse({ success: true, message: 'Fresh start initiated' });
             break;
           case "toggleSelectorGrabber":
-            runSelectorGrabberToggle(sendResponse);
+            (function() {
+              if (window.__CBPHAA_SELECTOR_GRABBER_ACTIVE__) {
+                window.__CBPHAA_SELECTOR_GRABBER_ACTIVE__ = false;
+                if (window.__CBPHAA_GRABBER_CLEANUP__) window.__CBPHAA_GRABBER_CLEANUP__();
+                sendResponse && sendResponse({ success: true, active: false });
+                return true;
+              }
+              window.__CBPHAA_SELECTOR_GRABBER_ACTIVE__ = true;
+              var overlay = document.createElement("div");
+              overlay.id = "cbph-selector-grabber-overlay";
+              overlay.style.cssText = "position:fixed;inset:0;z-index:2147483646;pointer-events:auto;cursor:crosshair;background:rgba(0,0,0,0.05);";
+              var highlight = document.createElement("div");
+              highlight.id = "cbph-selector-grabber-highlight";
+              highlight.style.cssText = "position:fixed;pointer-events:none;z-index:2147483645;border:2px solid #56ab2f;background:rgba(86,171,47,0.15);box-sizing:border-box;border-radius:2px;transition:top 0.05s,left 0.05s,width 0.05s,height 0.05s;";
+              var tooltip = document.createElement("div");
+              tooltip.id = "cbph-selector-grabber-tooltip";
+              tooltip.style.cssText = "position:fixed;pointer-events:none;z-index:2147483647;background:#333;color:#fff;font:11px/1.2 sans-serif;padding:4px 8px;border-radius:4px;white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis;";
+              document.body.appendChild(overlay);
+              document.body.appendChild(highlight);
+              document.body.appendChild(tooltip);
+              highlight.style.display = "none";
+              tooltip.style.display = "none";
+              function getElementAtPoint(x, y) {
+                overlay.style.pointerEvents = "none";
+                var el = document.elementFromPoint(x, y);
+                overlay.style.pointerEvents = "auto";
+                return el && el !== overlay && el !== highlight && el !== tooltip ? el : null;
+              }
+              function escapeCssId(id) {
+                if (!id) return "";
+                return id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+              }
+              function escapeCssAttr(val) {
+                if (val == null) return "";
+                return String(val).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+              }
+              function getSimpleSelector(el) {
+                if (!el || el.nodeType !== 1) return "";
+                var tag = el.tagName.toLowerCase();
+                if (el.id && /^[a-zA-Z][\w-]*$/.test(el.id)) return tag + "#" + escapeCssId(el.id);
+                var parts = [tag];
+                if (el.className && typeof el.className === "string") {
+                  var classes = el.className.trim().split(/\s+/).filter(Boolean);
+                  classes.slice(0, 3).forEach(function(c) { if (/^[\w-]+$/.test(c)) parts.push("." + c); });
+                }
+                return parts.join("");
+              }
+              function getSelectorPath(el) {
+                if (!el || el.nodeType !== 1) return "";
+                var tag = el.tagName.toLowerCase();
+                var nth = 1;
+                var sib = el.previousElementSibling;
+                while (sib) { if (sib.tagName === el.tagName) nth++; sib = sib.previousElementSibling; }
+                var sel = tag + ":nth-of-type(" + nth + ")";
+                return sel;
+              }
+              function countMatches(selector) {
+                try {
+                  return document.querySelectorAll(selector).length;
+                } catch (e) { return 0; }
+              }
+              function getUniqueSelector(target) {
+                if (!target || target.nodeType !== 1) return { selector: "", duplicate: false };
+                var simple = getSimpleSelector(target);
+                var n = countMatches(simple);
+                if (n <= 1) return { selector: simple, duplicate: false };
+                var path = [];
+                var current = target;
+                while (current && current !== document.body) {
+                  path.unshift(getSelectorPath(current));
+                  var combined = path.join(" > ");
+                  if (countMatches(combined) === 1) return { selector: combined, duplicate: true };
+                  current = current.parentElement;
+                }
+                return { selector: simple, duplicate: true };
+              }
+              function getAllAttributes(el) {
+                if (!el || el.nodeType !== 1) return {};
+                var o = {};
+                for (var i = 0; i < el.attributes.length; i++) {
+                  var a = el.attributes[i];
+                  o[a.name] = a.value;
+                }
+                return o;
+              }
+              function escapeHtml(s) {
+                var d = document.createElement("div");
+                d.textContent = s;
+                return d.innerHTML;
+              }
+              function showResultPanel(data) {
+                var existingBackdrop = document.getElementById("cbph-selector-grabber-modal-backdrop");
+                var existingPanel = document.getElementById("cbph-selector-grabber-result");
+                if (existingBackdrop) existingBackdrop.remove();
+                if (existingPanel) existingPanel.remove();
+                var backdrop = document.createElement("div");
+                backdrop.id = "cbph-selector-grabber-modal-backdrop";
+                backdrop.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;";
+                var panel = document.createElement("div");
+                panel.id = "cbph-selector-grabber-result";
+                panel.style.cssText = "position:relative;z-index:2147483647;width:100%;max-width:480px;max-height:85vh;overflow:hidden;background:#fff;color:#333;font:12px/1.4 sans-serif;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);display:flex;flex-direction:column;";
+                var dupNote = data.duplicate ? "<div style='color:#e65100;font-size:11px;margin-bottom:8px;'>Duplicate elements found – selector uses parent path for uniqueness.</div>" : "";
+                var attrRows = Object.keys(data.attributes).map(function(k) {
+                  var v = String(data.attributes[k]);
+                  var short = v.length > 60 ? v.substring(0, 60) + "…" : v;
+                  return "<div style='display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#f5f5f5;border-radius:4px;margin-bottom:4px;'>" +
+                    "<span style='font-weight:600;color:#1565c0;font-size:11px;'>" + escapeHtml(k) + "</span>" +
+                    "<span style='font-family:monospace;font-size:11px;word-break:break-all;max-width:70%;'>" + escapeHtml(short) + "</span>" +
+                    "<button type='button' class='cbph-attr-copy' data-value='" + escapeHtml(v).replace(/'/g, "&#39;") + "' style='background:none;border:none;cursor:pointer;padding:2px;margin-left:4px;' title='Copy value'>⎘</button>" +
+                    "</div>";
+                }).join("");
+                panel.innerHTML =
+                  "<div style='display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e0e0e0;background:#fafafa;border-radius:12px 12px 0 0;'>" +
+                  "<span style='font-weight:700;font-size:14px;color:#333;'>Selector</span>" +
+                  "<button type='button' id='cbph-grabber-close' style='background:none;border:none;cursor:pointer;padding:4px;font-size:18px;line-height:1;color:#666;' title='Close'>×</button>" +
+                  "</div>" +
+                  "<div style='padding:16px;overflow:auto;flex:1;'>" +
+                  "<div style='font-weight:600;font-size:11px;color:#666;margin-bottom:6px;'>CSS Selector</div>" +
+                  "<div style='display:flex;align-items:center;gap:8px;margin-bottom:12px;'>" +
+                  "<div style='flex:1;word-break:break-all;background:#f5f5f5;padding:8px 10px;border-radius:6px;font-family:monospace;font-size:12px;'>" + escapeHtml(data.selector) + "</div>" +
+                  "<button type='button' id='cbph-grabber-copy' style='padding:8px 12px;background:#56ab2f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap;' title='Copy selector'>Copy</button>" +
+                  "</div>" +
+                  dupNote +
+                  "<div style='font-weight:600;font-size:11px;color:#666;margin-bottom:6px;'>Tag</div>" +
+                  "<div style='margin-bottom:12px;font-family:monospace;font-size:12px;'>" + escapeHtml(data.tagName) + "</div>" +
+                  "<div style='font-weight:600;font-size:11px;color:#666;margin-bottom:6px;'>Attributes</div>" +
+                  "<div style='max-height:200px;overflow:auto;'>" + (attrRows || "<div style='color:#999;font-size:11px;'>No attributes</div>") + "</div>" +
+                  "</div>";
+                backdrop.appendChild(panel);
+                document.body.appendChild(backdrop);
+                document.getElementById("cbph-grabber-copy").onclick = function() {
+                  try {
+                    navigator.clipboard.writeText(data.selector);
+                    this.textContent = "Copied!";
+                    var t = this;
+                    setTimeout(function() { t.textContent = "Copy"; }, 1500);
+                  } catch (e) {}
+                };
+                document.getElementById("cbph-grabber-close").onclick = closeModal;
+                backdrop.onclick = function(e) {
+                  if (e.target === backdrop) closeModal();
+                };
+                panel.onclick = function(e) { e.stopPropagation(); };
+                var attrCopyBtns = panel.querySelectorAll(".cbph-attr-copy");
+                for (var i = 0; i < attrCopyBtns.length; i++) {
+                  (function(btn) {
+                    var val = btn.getAttribute("data-value");
+                    if (val) btn.onclick = function() {
+                      try {
+                        navigator.clipboard.writeText(val);
+                        btn.textContent = "✓";
+                        setTimeout(function() { btn.textContent = "⎘"; }, 800);
+                      } catch (e) {}
+                    };
+                  })(attrCopyBtns[i]);
+                }
+                function closeModal() {
+                  backdrop.remove();
+                }
+              }
+              function onMove(e) {
+                var el = getElementAtPoint(e.clientX, e.clientY);
+                if (!el) { highlight.style.display = "none"; tooltip.style.display = "none"; return; }
+                var r = el.getBoundingClientRect();
+                highlight.style.display = "block";
+                highlight.style.left = r.left + "px";
+                highlight.style.top = r.top + "px";
+                highlight.style.width = r.width + "px";
+                highlight.style.height = r.height + "px";
+                var tag = el.tagName.toLowerCase();
+                var id = el.id ? "#" + el.id : "";
+                var cls = el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/)[0] : "";
+                tooltip.textContent = tag + id + (cls ? cls : "");
+                tooltip.style.display = "block";
+                tooltip.style.left = (r.left + r.width / 2 - tooltip.offsetWidth / 2) + "px";
+                tooltip.style.top = (r.top - tooltip.offsetHeight - 6) + "px";
+                if (tooltip.offsetTop < 4) tooltip.style.top = (r.bottom + 6) + "px";
+              }
+              function onClick(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var el = getElementAtPoint(e.clientX, e.clientY);
+                if (!el) return;
+                var result = getUniqueSelector(el);
+                var attrs = getAllAttributes(el);
+                showResultPanel({
+                  selector: result.selector,
+                  duplicate: result.duplicate,
+                  tagName: el.tagName.toLowerCase(),
+                  attributes: attrs
+                });
+              }
+              function onKey(e) {
+                if (e.key === "Escape") {
+                  window.__CBPHAA_SELECTOR_GRABBER_ACTIVE__ = false;
+                  if (window.__CBPHAA_GRABBER_CLEANUP__) window.__CBPHAA_GRABBER_CLEANUP__();
+                }
+              }
+              overlay.addEventListener("mousemove", onMove);
+              overlay.addEventListener("click", onClick, true);
+              document.addEventListener("keydown", onKey);
+              window.__CBPHAA_GRABBER_CLEANUP__ = function() {
+                overlay.remove();
+                highlight.remove();
+                tooltip.remove();
+                document.removeEventListener("keydown", onKey);
+                var p = document.getElementById("cbph-selector-grabber-result");
+                if (p) p.remove();
+                var b = document.getElementById("cbph-selector-grabber-modal-backdrop");
+                if (b) b.remove();
+                window.__CBPHAA_GRABBER_CLEANUP__ = null;
+              };
+              sendResponse && sendResponse({ success: true, active: true });
+              return true;
+            })();
             break;
           default:
             console.warn(`⚠️ Unknown command received: ${request.command}`);
@@ -2787,18 +2809,9 @@
   
     // --- Popup Communication Setup ---
     function setupPopupCommunication() {
-      // Selector grabber: also listen for custom event (injected script dispatches this when postMessage may not deliver)
-      document.addEventListener('cbph-toggle-selector-grabber', function() {
-        runSelectorGrabberToggle();
-      });
       // Listen for commands from popup via postMessage
       window.addEventListener('message', (event) => {
         if (event.source !== window) return;
-        
-        if (event.data && event.data.type === 'TOGGLE_SELECTOR_GRABBER') {
-          runSelectorGrabberToggle();
-          return;
-        }
         
         if (event.data && event.data.type === 'AUTOMATION_COMMAND') {
           const command = event.data.command;
@@ -7417,7 +7430,8 @@
       indicator.style.cssText = `
         position: fixed;
         top: 20px;
-        right: 20px;
+        left: 20px;
+        right: auto;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 15px 20px;
@@ -7433,10 +7447,10 @@
         transition: all 0.3s ease;
       `;
       
-      // Add edge movement functionality
+      // Add edge movement functionality (default: upper left)
       let isDragging = false;
       let isMinimized = false;
-      let currentEdge = 'top';
+      let currentEdge = 'top-left';
       let dragOffset = { x: 0, y: 0 };
       
       // Make indicator draggable (only when not minimized)
@@ -7618,7 +7632,31 @@
           `;
           
           // Ensure position is maintained at edge when maximizing
-          if (currentEdge === 'top') {
+          if (currentEdge === 'top-left') {
+            indicator.style.top = '20px';
+            indicator.style.left = '20px';
+            indicator.style.right = 'auto';
+            indicator.style.bottom = 'auto';
+            indicator.style.transform = 'none';
+          } else if (currentEdge === 'top-right') {
+            indicator.style.top = '20px';
+            indicator.style.right = '20px';
+            indicator.style.left = 'auto';
+            indicator.style.bottom = 'auto';
+            indicator.style.transform = 'none';
+          } else if (currentEdge === 'bottom-left') {
+            indicator.style.bottom = '20px';
+            indicator.style.left = '20px';
+            indicator.style.right = 'auto';
+            indicator.style.top = 'auto';
+            indicator.style.transform = 'none';
+          } else if (currentEdge === 'bottom-right') {
+            indicator.style.bottom = '20px';
+            indicator.style.right = '20px';
+            indicator.style.left = 'auto';
+            indicator.style.top = 'auto';
+            indicator.style.transform = 'none';
+          } else if (currentEdge === 'top') {
             indicator.style.top = '20px';
             indicator.style.left = '50%';
             indicator.style.right = 'auto';
@@ -8055,7 +8093,16 @@
       } else {
         actualValue = (valueEl.value != null ? String(valueEl.value) : (valueEl.textContent || '')).trim();
       }
-      let isFilled = actualValue.trim() !== '';
+      const actualTrimmed = actualValue.trim();
+      let isFilled = actualTrimmed !== '';
+      const expectedEmpty = expectedValue == null || (typeof expectedValue === 'string' && String(expectedValue).trim() === '');
+      // When no value was supplied (expected empty): valid only if field is actually empty (data "out" = must not pass as filled)
+      if (expectedEmpty) {
+        const valid = !isFilled;
+        console.log(`🔍 Field validation (expected empty): actual="${actualValue}", filled=${isFilled}, valid=${valid}`);
+        return valid;
+      }
+      const expectedTrimmed = String(expectedValue).trim();
       
       // Helper function to normalize phone numbers (remove formatting)
       const normalizePhone = (phoneStr) => {
@@ -8256,7 +8303,7 @@
         return results;
       };
       
-      let isCorrect = !expectedValue || actualValue.includes(expectedValue) || expectedValue.includes(actualValue);
+      let isCorrect = actualTrimmed.includes(expectedTrimmed) || expectedTrimmed.includes(actualTrimmed);
       
       // Special handling for phone fields - normalize before comparison
       if (isPhoneFieldElement()) {
@@ -11488,11 +11535,11 @@
         
         // Element-specific fill logic
         if (tagName === 'select') {
-          return await fillSelectElement(element, value, stepIndex, method);
+          return await fillSelectElement(element, value, stepIndex, method, fillDelay, validationDelay);
         } else if (tagName === 'input') {
-          return await fillInputElement(element, value, stepIndex, method);
+          return await fillInputElement(element, value, stepIndex, method, fillDelay, validationDelay);
         } else if (tagName === 'textarea') {
-          return await fillTextareaElement(element, value, stepIndex, method);
+          return await fillTextareaElement(element, value, stepIndex, method, fillDelay, validationDelay);
         } else if (tagName === 'body') {
           // TinyMCE body: use TinyMCE API so content actually displays (valueKey fill path)
           const isTinyMCE = element.id === 'tinymce' || element.classList.contains('mceContentBody');
@@ -11502,7 +11549,7 @@
           return await fillGenericElement(element, value, stepIndex, method);
         } else {
           // Generic fallback for other elements
-          return await fillGenericElement(element, value, stepIndex, method);
+          return await fillGenericElement(element, value, stepIndex, method, fillDelay, validationDelay);
         }
       } catch (error) {
         console.error(`❌ [${stepIndex}] Error in fillElementByType:`, error);
@@ -11569,7 +11616,7 @@
     }
   
     // Fill select element with smart option matching
-    async function fillSelectElement(element, value, stepIndex, method) {
+    async function fillSelectElement(element, value, stepIndex, method, fillDelay = 100, validationDelay = 200) {
       console.log(`🔧 [${stepIndex}] Filling SELECT element with value: "${value}"`);
       
       const options = Array.from(element.options);
@@ -11643,8 +11690,9 @@
         element.dispatchEvent(new Event('select', { bubbles: true }));
         element.dispatchEvent(new Event('blur', { bubbles: true }));
         
-        // Small delay to ensure events are processed
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Wait for DOM/framework to sync before validating
+        const delay = (validationDelay != null && validationDelay > 0) ? validationDelay : 100;
+        await new Promise(resolve => setTimeout(resolve, delay));
         
         // Validate the selection
         const isValid = validateFieldFill(element, value);
@@ -11663,7 +11711,7 @@
     }
   
     // Fill input element with enhanced event handling (robust approach for tricky sites)
-    async function fillInputElement(element, value, stepIndex, method) {
+    async function fillInputElement(element, value, stepIndex, method, fillDelay = 100, validationDelay = 200) {
       console.log(`🔧 [${stepIndex}] Filling INPUT element with value: "${value}"`);
       
       // Check if this is a Bootstrap Tagsinput or similar tag input component
@@ -11910,8 +11958,9 @@
         }
       }
       
-      // Small delay to ensure events are processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for DOM/framework to sync before validating (avoids "data supplied but validation fails")
+      const delay = (validationDelay != null && validationDelay > 0) ? validationDelay : 100;
+      await new Promise(resolve => setTimeout(resolve, delay));
       
       // Validate the fill
       const isValid = validateFieldFill(element, value);
@@ -11919,7 +11968,7 @@
     }
   
     // Fill textarea element (robust approach for tricky sites)
-    async function fillTextareaElement(element, value, stepIndex, method) {
+    async function fillTextareaElement(element, value, stepIndex, method, fillDelay = 100, validationDelay = 200) {
       console.log(`🔧 [${stepIndex}] Filling TEXTAREA element with value: "${value}"`);
       
       // Robust approach for tricky sites
@@ -11939,8 +11988,9 @@
       // 5. Blur (fires onblur)
       element.blur();
       
-      // Small delay to ensure events are processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for DOM/framework to sync before validating
+      const delay = (validationDelay != null && validationDelay > 0) ? validationDelay : 100;
+      await new Promise(resolve => setTimeout(resolve, delay));
       
       // Validate the fill
       const isValid = validateFieldFill(element, value);
@@ -11948,7 +11998,7 @@
     }
   
     // Generic fill for other elements (robust approach for tricky sites)
-    async function fillGenericElement(element, value, stepIndex, method) {
+    async function fillGenericElement(element, value, stepIndex, method, fillDelay = 100, validationDelay = 200) {
       console.log(`🔧 [${stepIndex}] Filling generic element (${element.tagName}) with value: "${value}"`);
       
       // Robust approach for tricky sites
@@ -11976,8 +12026,9 @@
       // 5. Blur (fires onblur)
       element.blur();
       
-      // Small delay to ensure events are processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for DOM/framework to sync before validating
+      const delay = (validationDelay != null && validationDelay > 0) ? validationDelay : 100;
+      await new Promise(resolve => setTimeout(resolve, delay));
       
       // Validate the fill
       const isValid = validateFieldFill(element, value);
@@ -15379,6 +15430,29 @@
         }
       }
   
+      // Check for oHcnt/ohline structure (German-style: .oHcnt > .ohline rows, select.ohtime.von1/bis1, select.status; name="mo[von1]", "mo[bis1]", "mo[status1]", etc.)
+      const oHcntStructure = searchRoot.querySelector('.oHcnt, .container.ohline, [class*="oHcnt"], [class*="ohline"]');
+      if (oHcntStructure) {
+        const hasOhtimeSelects = oHcntStructure.querySelector('select.ohtime, select[class*="ohtime"], select[name*="von1"], select[name*="bis1"]');
+        const hasStatusSelect = oHcntStructure.querySelector('select.status, select[class*="status"], select[name*="status1"]');
+        const hasDayPrefix = oHcntStructure.querySelector('select[name="mo[von1]"], select[id="von1mo"], select[name="di[von1]"], select[id^="von1"]');
+        if ((hasOhtimeSelects || hasDayPrefix) && (hasStatusSelect || hasDayPrefix)) {
+          console.log('🏗️ [detectHourStructure] Detected oHcnt/ohline structure (von1/bis1/status per day)');
+          return 'ohcnt-ohline';
+        }
+      }
+  
+      // Check for timetable structure (table.timetable with input#monday_start, input#monday_end, input#monday_closed, etc.)
+      const timetableTable = searchRoot.querySelector('table.timetable, table[class*="timetable"]');
+      if (timetableTable) {
+        const hasMondayStart = searchRoot.querySelector('input#monday_start, input[id="monday_start"]');
+        const hasStartEnd = searchRoot.querySelector('input[id$="_start"], input[id$="_end"]');
+        if (hasMondayStart || (hasStartEnd && timetableTable.querySelector('input[id$="_start"]'))) {
+          console.log('🏗️ [detectHourStructure] Detected timetable structure (card > table.timetable, {day}_start/_end/_closed)');
+          return 'timetable';
+        }
+      }
+  
       const tradingHoursRoot = findTradingHoursRoot(searchRoot);
       if (tradingHoursRoot) {
         console.log('🏗️ [detectHourStructure] Detected trading hours button structure');
@@ -15428,9 +15502,16 @@
     function getHoursContextElement(element = null) {
       let contextElement = document.querySelector('#hours-of-operation');
       if (!contextElement) {
+        contextElement = document.querySelector('.oHcnt, .container.ohline');
+      }
+      if (!contextElement) {
+        const timetableEl = document.querySelector('table.timetable, table[class*="timetable"]');
+        if (timetableEl) contextElement = timetableEl.closest('.card, .card-block') || timetableEl;
+      }
+      if (!contextElement) {
         contextElement = element
           ? (element.closest('form') ||
-             element.closest('[class*="hour"], [class*="time"], [id*="hour"], [id*="time"]') ||
+             element.closest('.oHcnt, .ohline, [class*="hour"], [class*="time"], [id*="hour"], [id*="time"]') ||
              document.body)
           : document.body;
       }
@@ -17310,6 +17391,39 @@
               console.log(`🛑 [${stepIndex}] Automation aborted during step delay - stopping execution`);
               return { success: false, error: 'Automation aborted', aborted: true };
             }
+          }
+        }
+        
+        // NextButtonSave signal: if previous step was NextButtonSave, wait for this step's target (textbox/button) to be available before proceeding
+        if (window.__NEXT_BUTTON_SAVE_PENDING__ && selector && (action === 'click' || action === 'fill' || action === 'fillAndSelect' || action === 'fillAndEnter')) {
+          const waitForElementMs = 10000; // 10 seconds
+          const pollIntervalMs = 300;
+          const startWait = Date.now();
+          let elFound = null;
+          while (Date.now() - startWait < waitForElementMs) {
+            if (AUTOMATION_STATE.isAborted() || !automationRunning) {
+              window.__NEXT_BUTTON_SAVE_PENDING__ = false;
+              return { success: false, error: 'Automation aborted', aborted: true };
+            }
+            try {
+              elFound = document.querySelector(selector);
+              if (elFound && elFound.offsetParent !== null) {
+                console.log(`✅ [${stepIndex}] NextButtonSave: target element available after ${Date.now() - startWait}ms`);
+                window.__NEXT_BUTTON_SAVE_PENDING__ = false;
+                break;
+              }
+            } catch (e) {}
+            elFound = null;
+            await new Promise(function(r) { setTimeout(r, pollIntervalMs); });
+          }
+          if (!elFound || elFound.offsetParent === null) {
+            window.__NEXT_BUTTON_SAVE_PENDING__ = false;
+            if (canSkip === true) {
+              console.log(`⏭️ [${stepIndex}] NextButtonSave: target not available after ${waitForElementMs}ms, skipping step (canSkip: true)`);
+              return { success: true, skipped: true, reason: 'Element not available after NextButtonSave (canSkip)' };
+            }
+            console.error(`❌ [${stepIndex}] NextButtonSave: target not available after ${waitForElementMs}ms - pausing. Selector: ${selector}`);
+            return { success: false, error: 'Element not available after NextButtonSave (textbox/button not found). Selector: ' + (selector || '') };
           }
         }
         
@@ -20376,303 +20490,22 @@
                   }
                 }
                 
-                // Handle NextButtonSave special case
+                // Handle NextButtonSave: no page-state checking; signal next step to wait for its target element
                 if (valueKey === 'NextButtonSave') {
-                  console.log(`🎯 [NextButtonSave] DETECTED! This is a NextButtonSave action`);
-                  console.log(`🔄 [NextButtonSave] Button clicked, waiting for page load`);
-                  console.log(`🔍 [NextButtonSave] Current step index: ${stepIndex}`);
-                  
-                  // Set flag for page navigation detection
+                  console.log(`🎯 [NextButtonSave] Button clicked - next step will wait for its target (textbox/button) before executing`);
                   window.__NEXT_BUTTON_SAVE_PENDING__ = true;
-                  window.__NEXT_BUTTON_SAVE_START_TIME__ = Date.now();
-  
-                // Update resume index immediately so reloads continue at next step
-                const resumeKey = getTabSpecificResumeIndexKey();
-                safeChromeCall(() => {
-                  CHROME_API.storage.local.set({ [resumeKey]: stepIndex + 1 }, () => {
-                    if (CHROME_API.runtime.lastError) {
-                      console.warn(`⚠️ [NextButtonSave] Failed to update resume index early: ${CHROME_API.runtime.lastError.message}`);
-                    } else {
-                      console.log(`✅ [NextButtonSave] Resume index updated early to ${stepIndex + 1}`);
-                    }
-                  });
-                });
-                  
-                  console.log(`🔄 [NextButtonSave] Waiting for page navigation and load completion...`);
-                  showToast('NextButtonSave: Waiting for page to load...');
-                  
-                  // Enhanced page load detection with multiple strategies
-                  const maxWaitTime = 30000; // 30 seconds maximum wait
-                  const checkInterval = 500; // Check every 500ms
-                  let stableCount = 0; // Count of consecutive stable checks
-                  const requiredStableChecks = 5; // Need 5 consecutive stable checks
-                  let lastContentHash = '';
-                  let lastUrl = window.location.href;
-                  let lastTitle = document.title;
-                  let formSubmissionDetected = false;
-                  let initialFormState = null;
-                  
-                  // Function to generate a simple content hash
-                  const getContentHash = () => {
-                    const bodyText = document.body ? document.body.innerText : '';
-                    const url = window.location.href;
-                    const title = document.title;
-                    
-                    // Create a simple hash that works with Unicode characters
-                    const content = bodyText + url + title;
-                    let hash = 0;
-                    
-                    if (content.length === 0) return '0';
-                    
-                    for (let i = 0; i < content.length; i++) {
-                      const char = content.charCodeAt(i);
-                      hash = ((hash << 5) - hash) + char;
-                      hash = hash & hash; // Convert to 32-bit integer
-                    }
-                    
-                    return Math.abs(hash).toString(36).substring(0, 20);
-                  };
-                  
-                  // Enhanced network activity monitoring
-                  let networkRequestCount = 0;
-                  let lastNetworkActivity = Date.now();
-                  
-                  // Store original functions for restoration
-                  const originalFetch = window.fetch;
-                  const originalXHROpen = XMLHttpRequest.prototype.open;
-                  const originalXHRSend = XMLHttpRequest.prototype.send;
-                  
-                  // Function to restore network functions
-                  const restoreNetworkFunctions = () => {
-                    try {
-                      if (originalFetch && window.fetch !== originalFetch) {
-                        window.fetch = originalFetch;
-                      }
-                      if (originalXHROpen && XMLHttpRequest.prototype.open !== originalXHROpen) {
-                        XMLHttpRequest.prototype.open = originalXHROpen;
-                      }
-                      if (originalXHRSend && XMLHttpRequest.prototype.send !== originalXHRSend) {
-                        XMLHttpRequest.prototype.send = originalXHRSend;
-                      }
-                    } catch (error) {
-                      console.warn('Error restoring network functions:', error);
-                    }
-                  };
-                  
-                  // Ensure restoration on page unload
-                  const unloadHandler = () => {
-                    restoreNetworkFunctions();
-                  };
-                  window.addEventListener('beforeunload', unloadHandler);
-                  window.addEventListener('unload', unloadHandler);
-                  
-                  // Override fetch to track network activity
-                  if (originalFetch) {
-                    window.fetch = function(...args) {
-                      networkRequestCount++;
-                      lastNetworkActivity = Date.now();
-                      console.log(`🌐 [NextButtonSave] Network request detected (${networkRequestCount})`);
-                      
-                      return originalFetch.apply(this, args).finally(() => {
-                        networkRequestCount = Math.max(0, networkRequestCount - 1);
-                        if (networkRequestCount === 0) {
-                          console.log(`🌐 [NextButtonSave] All network requests completed`);
-                        }
-                      });
-                    };
-                  }
-                  
-                  // Override XMLHttpRequest to track network activity
-                  
-                  XMLHttpRequest.prototype.open = function(...args) {
-                    networkRequestCount++;
-                    lastNetworkActivity = Date.now();
-                    console.log(`🌐 [NextButtonSave] XHR request detected (${networkRequestCount})`);
-                    return originalXHROpen.apply(this, args);
-                  };
-                  
-                  XMLHttpRequest.prototype.send = function(...args) {
-                    const xhr = this;
-                    const originalOnLoad = xhr.onload;
-                    const originalOnError = xhr.onerror;
-                    
-                    xhr.onload = function(...loadArgs) {
-                      networkRequestCount = Math.max(0, networkRequestCount - 1);
-                      if (networkRequestCount === 0) {
-                        console.log(`🌐 [NextButtonSave] All XHR requests completed`);
-                      }
-                      if (originalOnLoad) return originalOnLoad.apply(this, loadArgs);
-                    };
-                    
-                    xhr.onerror = function(...errorArgs) {
-                      networkRequestCount = Math.max(0, networkRequestCount - 1);
-                      if (networkRequestCount === 0) {
-                        console.log(`🌐 [NextButtonSave] All XHR requests completed (with error)`);
-                      }
-                      if (originalOnError) return originalOnError.apply(this, errorArgs);
-                    };
-                    
-                    return originalXHRSend.apply(this, args);
-                  };
-                  
-                  // Function to check if network is idle
-                  const isNetworkIdle = () => {
-                    const timeSinceLastActivity = Date.now() - lastNetworkActivity;
-                    const isIdle = networkRequestCount === 0 && timeSinceLastActivity > 1000; // 1 second grace period
-                    
-                    if (!isIdle) {
-                      console.log(`🌐 [NextButtonSave] Network not idle: ${networkRequestCount} pending requests, ${timeSinceLastActivity}ms since last activity`);
-                    }
-                    
-                    return isIdle;
-                  };
-                  
-                  // Function to detect form submission state
-                  const detectFormSubmission = () => {
-                    // Look for form elements and their state
-                    const forms = document.querySelectorAll('form');
-                    const submitButtons = document.querySelectorAll('button[type="submit"], input[type="submit"]');
-                    
-                    // Check if any forms are being submitted (disabled submit buttons)
-                    const disabledSubmitButtons = Array.from(submitButtons).filter(btn => btn.disabled);
-                    if (disabledSubmitButtons.length > 0) {
-                      console.log(`📝 [NextButtonSave] Form submission detected: ${disabledSubmitButtons.length} submit buttons disabled`);
-                      formSubmissionDetected = true;
-                      return true;
-                    }
-                    
-                    // Check for form validation errors
-                    const errorElements = document.querySelectorAll('[class*="error"], [class*="invalid"], .error, .invalid, [aria-invalid="true"]');
-                    if (errorElements.length > 0) {
-                      console.log(`❌ [NextButtonSave] Form validation errors detected: ${errorElements.length} error elements`);
-                      return false; // Form has errors, not stable
-                    }
-                    
-                    // Check for success indicators
-                    const successElements = document.querySelectorAll('[class*="success"], [class*="complete"], .success, .complete');
-                    if (successElements.length > 0) {
-                      console.log(`✅ [NextButtonSave] Success indicators detected: ${successElements.length} success elements`);
-                      formSubmissionDetected = true;
-                      return true;
-                    }
-                    
-                    return formSubmissionDetected;
-                  };
-  
-                  // Function to check if page is truly loaded and stable
-                  const isPageStable = () => {
-                    const currentHash = getContentHash();
-                    const currentUrl = window.location.href;
-                    const currentTitle = document.title;
-                    
-                    // Check if content has changed recently
-                    const contentChanged = currentHash !== lastContentHash;
-                    const urlChanged = currentUrl !== lastUrl;
-                    const titleChanged = currentTitle !== lastTitle;
-                    
-                    if (contentChanged || urlChanged || titleChanged) {
-                      console.log(`🔄 [NextButtonSave] Content change detected:`);
-                      if (contentChanged) console.log(`   • Content hash changed`);
-                      if (urlChanged) console.log(`   • URL: ${lastUrl} → ${currentUrl}`);
-                      if (titleChanged) console.log(`   • Title: ${lastTitle} → ${currentTitle}`);
-                      
-                      lastContentHash = currentHash;
-                      lastUrl = currentUrl;
-                      lastTitle = currentTitle;
-                      stableCount = 0; // Reset stability count on content change
-                      return false; // Not stable yet
-                    }
-                    
-                    // Check document ready state
-                    if (document.readyState !== 'complete') {
-                      console.log(`⏳ [NextButtonSave] Document not complete: ${document.readyState}`);
-                      return false;
-                    }
-                    
-                    // Check if network appears idle
-                    if (!isNetworkIdle()) {
-                      console.log(`⏳ [NextButtonSave] Network not idle`);
-                      return false;
-                    }
-                    
-                    // Check for common loading indicators
-                    const loadingIndicators = document.querySelectorAll('[class*="loading"], [class*="spinner"], [class*="loader"], .loading, .spinner, .loader');
-                    if (loadingIndicators.length > 0) {
-                      console.log(`⏳ [NextButtonSave] Loading indicators found: ${loadingIndicators.length}`);
-                      return false;
-                    }
-                    
-                    // Check form submission state
-                    const formSubmitted = detectFormSubmission();
-                    if (!formSubmitted && !formSubmissionDetected) {
-                      console.log(`⏳ [NextButtonSave] Form submission not yet detected`);
-                      return false;
-                    }
-                    
-                    return true;
-                  };
-                  
-                  const waitForPageLoad = () => new Promise((resolve) => {
-                    const cleanup = () => {
-                      window.__NEXT_BUTTON_SAVE_PENDING__ = false;
-                      window.__NEXT_BUTTON_SAVE_START_TIME__ = null;
-                      restoreNetworkFunctions();
-                      window.removeEventListener('beforeunload', unloadHandler);
-                      window.removeEventListener('unload', unloadHandler);
-                    };
-                    
-                    const check = () => {
-                      const elapsed = Date.now() - window.__NEXT_BUTTON_SAVE_START_TIME__;
-                      const minWaitTime = 3000; // Minimum 3 seconds wait for form submission
-                      
-                      if (elapsed > maxWaitTime) {
-                        console.log(`⏰ [NextButtonSave] Maximum wait time reached (${elapsed}ms), continuing automation...`);
-                        cleanup();
-                        resolve(false);
-                        return;
-                      }
-                      
-                      // Ensure minimum wait time for form submission
-                      if (elapsed < minWaitTime) {
-                        console.log(`⏳ [NextButtonSave] Minimum wait time not reached (${elapsed}ms/${minWaitTime}ms)...`);
-                        setTimeout(check, checkInterval);
-                        return;
-                      }
-                      
-                      // Check if page is stable
-                      if (isPageStable()) {
-                        stableCount++;
-                        console.log(`✅ [NextButtonSave] Page stable check ${stableCount}/${requiredStableChecks} (${elapsed}ms elapsed)`);
-                        
-                        if (stableCount >= requiredStableChecks) {
-                          console.log(`✅ [NextButtonSave] Page load completed and stable (${elapsed}ms), continuing automation...`);
-                          showToast(`NextButtonSave: Page loaded and stable! Continuing automation...`);
-                          cleanup();
-                          resolve(true);
-                          return;
-                        }
+                  const resumeKey = getTabSpecificResumeIndexKey();
+                  safeChromeCall(() => {
+                    CHROME_API.storage.local.set({ [resumeKey]: stepIndex + 1 }, () => {
+                      if (CHROME_API.runtime && CHROME_API.runtime.lastError) {
+                        console.warn(`⚠️ [NextButtonSave] Failed to update resume index: ${CHROME_API.runtime.lastError.message}`);
                       } else {
-                        stableCount = 0; // Reset stable count if page is not stable
-                        console.log(`⏳ [NextButtonSave] Page not stable yet (${elapsed}ms elapsed)...`);
+                        console.log(`✅ [NextButtonSave] Resume index updated to ${stepIndex + 1}`);
                       }
-                      
-                      // Show progress toast every 2 seconds
-                      if (elapsed % 2000 < checkInterval) {
-                        showToast(`NextButtonSave: Waiting for form submission... (${Math.round(elapsed/1000)}s)`);
-                      }
-                      
-                      // Continue checking
-                      setTimeout(check, checkInterval);
-                    };
-                    
-                    // Start the page load detection
-                    setTimeout(check, 1000);
+                    });
                   });
-                  
-                  const pageLoaded = await waitForPageLoad();
-                  if (!pageLoaded) {
-                    console.warn(`⚠️ [NextButtonSave] Proceeding after timeout without stable page detection`);
-                  }
+                  await new Promise(function(r) { setTimeout(r, 1500); }); // Short delay after click
+                  return { success: true };
                 }
                 
                 return { success: true };
@@ -21534,10 +21367,19 @@
                                                       document.querySelector('input[type="time"][name^="op["], input[name^="op["]') &&
                                                       document.querySelector('input[type="time"][name^="cl["], input[name^="cl["]');
                 
-                // If this looks like a business hours form OR has the anw-hour structure OR hours-of-operation structure OR opening-hours table structure, and valueKey indicates a specific day/hour,
+                // Check if page has oHcnt/ohline structure (.oHcnt > .ohline, select.ohtime von1/bis1, select.status; mo[von1], mo[bis1], mo[status1], etc.)
+                const hasOHcntStructure = document.querySelector('.oHcnt, .container.ohline, [class*="oHcnt"]') &&
+                  (document.querySelector('select.ohtime[name*="von1"], select#von1mo, select[name="mo[von1]"]') ||
+                   document.querySelector('select[name*="von1"], select[id^="von1"]'));
+                
+                // Check if page has timetable structure (table.timetable with input#monday_start, input#monday_end, input#monday_closed)
+                const hasTimetableStructure = document.querySelector('table.timetable, table[class*="timetable"]') &&
+                  document.querySelector('input#monday_start, input[id="monday_start"], input[id$="_start"]');
+                
+                // If this looks like a business hours form OR has the anw-hour structure OR hours-of-operation structure OR opening-hours table structure OR oHcnt structure OR timetable structure, and valueKey indicates a specific day/hour,
                 // try to auto-fill all related hour fields
-                if ((isBusinessHoursForm || hasAnwHourStructure || hasHoursOfOperationStructure || hasOpeningHoursTableStructure) && valueKey && (valueKey.includes('Am') || valueKey.includes('Pm'))) {
-                  console.log(`🔍 [${stepIndex}] Business hours form detected (isBusinessHoursForm: ${isBusinessHoursForm}, hasAnwHourStructure: ${!!hasAnwHourStructure}, hasHoursOfOperationStructure: ${!!hasHoursOfOperationStructure}, hasOpeningHoursTableStructure: ${!!hasOpeningHoursTableStructure}) - attempting smart multiple hours autofilling`);
+                if ((isBusinessHoursForm || hasAnwHourStructure || hasHoursOfOperationStructure || hasOpeningHoursTableStructure || hasOHcntStructure || hasTimetableStructure) && valueKey && (valueKey.includes('Am') || valueKey.includes('Pm'))) {
+                  console.log(`🔍 [${stepIndex}] Business hours form detected (isBusinessHoursForm: ${isBusinessHoursForm}, hasAnwHourStructure: ${!!hasAnwHourStructure}, hasHoursOfOperationStructure: ${!!hasHoursOfOperationStructure}, hasOpeningHoursTableStructure: ${!!hasOpeningHoursTableStructure}, hasOHcntStructure: ${!!hasOHcntStructure}, hasTimetableStructure: ${!!hasTimetableStructure}) - attempting smart multiple hours autofilling`);
                   
                   // Handle hours-of-operation structure (hidden inputs + time pickers)
                   if (hasHoursOfOperationStructure) {
@@ -21753,6 +21595,146 @@
                     if (hoursFilledCount > 0) {
                       console.log(`✅ [${stepIndex}] Opening-hours table structure: ${hoursFilledCount} field(s) filled`);
                       // Continue with normal flow for the specific selector if provided
+                    }
+                  }
+                  
+                  // Handle oHcnt/ohline structure (German-style: von1/bis1/status1 per day; IDs von1mo, bis1mo, status1mo; names mo[von1], mo[bis1], mo[status1])
+                  if (hasOHcntStructure) {
+                    console.log(`🔍 [${stepIndex}] Detected oHcnt/ohline structure - filling von1/bis1/status1 per day`);
+                    const oHcntDayMap = { mon: 'mo', tue: 'di', wed: 'mi', thu: 'do', fri: 'fr', sat: 'sa', sun: 'so' };
+                    const oHcntDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+                    let oHcntFilledCount = 0;
+                    for (const day of oHcntDays) {
+                      const prefix = oHcntDayMap[day];
+                      const amKey = `${day}Am`;
+                      const pmKey = `${day}Pm`;
+                      const amValue = flatData[amKey];
+                      const pmValue = flatData[pmKey];
+                      const am24 = amValue ? convertTo24Hour(String(amValue).trim()) : null;
+                      const pm24 = pmValue ? convertTo24Hour(String(pmValue).trim()) : null;
+                      const isClosed = !amValue || !pmValue || String(amValue).trim().toLowerCase() === 'closed' || String(pmValue).trim().toLowerCase() === 'closed';
+                      const von1Select = document.querySelector(`select#von1${prefix}, select[name="${prefix}[von1]"], select.ohtime.von1[name="${prefix}[von1]"]`) ||
+                        document.querySelector(`.oHcnt select[name="${prefix}[von1]"], .ohline select[name="${prefix}[von1]"]`);
+                      const bis1Select = document.querySelector(`select#bis1${prefix}, select[name="${prefix}[bis1]"], select.ohtime.bis1[name="${prefix}[bis1]"]`) ||
+                        document.querySelector(`.oHcnt select[name="${prefix}[bis1]"], .ohline select[name="${prefix}[bis1]"]`);
+                      const status1Select = document.querySelector(`select#status1${prefix}, select[name="${prefix}[status1]"], select.status.status1[name="${prefix}[status1]"]`) ||
+                        document.querySelector(`.oHcnt select[name="${prefix}[status1]"], .ohline select[name="${prefix}[status1]"]`);
+                      if (von1Select && bis1Select && status1Select) {
+                        if (isClosed || !am24 || !pm24) {
+                          const closedOption = Array.from(status1Select.options).find(opt => (opt.value || '').toLowerCase() === 'geschlossen');
+                          if (closedOption) {
+                            status1Select.value = closedOption.value;
+                            status1Select.dispatchEvent(new Event('change', { bubbles: true }));
+                            status1Select.dispatchEvent(new Event('input', { bubbles: true }));
+                            oHcntFilledCount++;
+                            console.log(`✅ [${stepIndex}] Set ${day} (${prefix}) status to closed`);
+                          }
+                        } else {
+                          const findTimeOption = (selectEl, time24) => {
+                            if (!selectEl || !time24) return null;
+                            const options = Array.from(selectEl.options);
+                            const normalized = time24.includes(':') ? time24 : time24.length === 4 ? time24.slice(0, 2) + ':' + time24.slice(2) : time24;
+                            return options.find(opt => String(opt.value).trim() === normalized || String(opt.value).trim() === time24) || options.find(opt => opt.value && convertTo24Hour(opt.textContent.trim()) === normalized);
+                          };
+                          const vonOption = findTimeOption(von1Select, am24);
+                          const bisOption = findTimeOption(bis1Select, pm24) || findTimeOption(bis1Select, '24:00');
+                          if (vonOption) {
+                            von1Select.value = vonOption.value;
+                            von1Select.dispatchEvent(new Event('change', { bubbles: true }));
+                            von1Select.dispatchEvent(new Event('input', { bubbles: true }));
+                            oHcntFilledCount++;
+                          }
+                          if (bisOption) {
+                            bis1Select.value = bisOption.value;
+                            bis1Select.dispatchEvent(new Event('change', { bubbles: true }));
+                            bis1Select.dispatchEvent(new Event('input', { bubbles: true }));
+                            oHcntFilledCount++;
+                          }
+                          const openOption = Array.from(status1Select.options).find(opt => (opt.value || '').toLowerCase() === 'offen');
+                          if (openOption) {
+                            status1Select.value = openOption.value;
+                            status1Select.dispatchEvent(new Event('change', { bubbles: true }));
+                            status1Select.dispatchEvent(new Event('input', { bubbles: true }));
+                            oHcntFilledCount++;
+                          }
+                          console.log(`✅ [${stepIndex}] Filled ${day} (${prefix}): von1=${am24}, bis1=${pm24}`);
+                        }
+                      }
+                    }
+                    if (oHcntFilledCount > 0) {
+                      console.log(`✅ [${stepIndex}] oHcnt/ohline structure: ${oHcntFilledCount} field(s) filled`);
+                    }
+                  }
+                  
+                  // Handle timetable structure (table.timetable with input#monday_start, input#monday_end, input#monday_closed)
+                  if (hasTimetableStructure) {
+                    console.log(`🔍 [${stepIndex}] Detected timetable structure - filling {day}_start, {day}_end, {day}_closed`);
+                    const timetableDayMap = { mon: 'monday', tue: 'tuesday', wed: 'wednesday', thu: 'thursday', fri: 'friday', sat: 'saturday', sun: 'sunday' };
+                    const timetableDays = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+                    let timetableFilledCount = 0;
+                    for (const day of timetableDays) {
+                      const dayName = timetableDayMap[day];
+                      const amKey = `${day}Am`;
+                      const pmKey = `${day}Pm`;
+                      const amValue = flatData[amKey];
+                      const pmValue = flatData[pmKey];
+                      const am24 = amValue ? convertTo24Hour(String(amValue).trim()) : null;
+                      const pm24 = pmValue ? convertTo24Hour(String(pmValue).trim()) : null;
+                      const isClosed = !amValue || !pmValue || String(amValue).trim().toLowerCase() === 'closed' || String(pmValue).trim().toLowerCase() === 'closed';
+                      const startInput = document.querySelector(`input#${dayName}_start, input[id="${dayName}_start"]`);
+                      const endInput = document.querySelector(`input#${dayName}_end, input[id="${dayName}_end"]`);
+                      const closedCheckbox = document.querySelector(`input#${dayName}_closed, input[id="${dayName}_closed"]`);
+                      if (startInput && endInput) {
+                        if (isClosed || !am24 || !pm24) {
+                          if (closedCheckbox && !closedCheckbox.checked) {
+                            closedCheckbox.checked = true;
+                            closedCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                            closedCheckbox.dispatchEvent(new Event('click', { bubbles: true }));
+                            timetableFilledCount++;
+                          }
+                          if (startInput.value) { startInput.value = ''; startInput.dispatchEvent(new Event('input', { bubbles: true })); startInput.dispatchEvent(new Event('change', { bubbles: true })); }
+                          if (endInput.value) { endInput.value = ''; endInput.dispatchEvent(new Event('input', { bubbles: true })); endInput.dispatchEvent(new Event('change', { bubbles: true })); }
+                          console.log(`✅ [${stepIndex}] Set ${day} (${dayName}) to closed`);
+                        } else {
+                          if (closedCheckbox && closedCheckbox.checked) {
+                            closedCheckbox.checked = false;
+                            closedCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                            closedCheckbox.dispatchEvent(new Event('click', { bubbles: true }));
+                            timetableFilledCount++;
+                          }
+                          const formatTime5 = (time24) => {
+                            if (!time24) return '';
+                            const s = String(time24).trim();
+                            if (s.length <= 5) return s;
+                            if (s.indexOf(':') !== -1) return s.slice(0, 5);
+                            return s.slice(0, 2) + ':' + s.slice(2, 4);
+                          };
+                          const startVal = formatTime5(am24);
+                          const endVal = formatTime5(pm24);
+                          if (startVal) {
+                            startInput.focus();
+                            startInput.value = '';
+                            startInput.value = startVal;
+                            startInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            startInput.dispatchEvent(new Event('change', { bubbles: true }));
+                            startInput.dispatchEvent(new Event('blur', { bubbles: true }));
+                            timetableFilledCount++;
+                          }
+                          if (endVal) {
+                            endInput.focus();
+                            endInput.value = '';
+                            endInput.value = endVal;
+                            endInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            endInput.dispatchEvent(new Event('change', { bubbles: true }));
+                            endInput.dispatchEvent(new Event('blur', { bubbles: true }));
+                            timetableFilledCount++;
+                          }
+                          console.log(`✅ [${stepIndex}] Filled ${day} (${dayName}): start=${startVal}, end=${endVal}`);
+                        }
+                      }
+                    }
+                    if (timetableFilledCount > 0) {
+                      console.log(`✅ [${stepIndex}] Timetable structure: ${timetableFilledCount} field(s) filled`);
                     }
                   }
                   
@@ -22808,6 +22790,21 @@
         }
       }
   
+      // Checkpoint stepsToSkip: when checkpoint is enabled, skip any step whose id is in checkpoint.stepsToSkip
+      let stepsToSkip = [];
+      try {
+        const checkpointInfo = await findCheckpointStep(steps);
+        if (checkpointInfo.found && checkpointInfo.step && checkpointInfo.step.enabled !== false) {
+          const list = checkpointInfo.step.stepsToSkip;
+          stepsToSkip = Array.isArray(list) ? list.map(function(id) { return id != null ? String(id) : ''; }).filter(Boolean) : [];
+          if (stepsToSkip.length > 0) {
+            console.log('[CHECKPOINT] stepsToSkip active: will skip step ids:', stepsToSkip);
+          }
+        }
+      } catch (e) {
+        console.warn('[CHECKPOINT] Error reading stepsToSkip:', e);
+      }
+
       // REFACTORED: Simple and reliable automation loop
       for (let i = startIndex; i < steps.length; i++) {
         try {
@@ -22843,6 +22840,35 @@
   
           // REFACTORED: Execute step with enhanced retry logic for required fields
           const { action, selector, valueKey, value, waitTimeout, required = false, label, description } = steps[i];
+          
+          // Checkpoint stepsToSkip: skip this step if its id is in the checkpoint's stepsToSkip list
+          const stepId = steps[i].id != null ? String(steps[i].id) : '';
+          if (stepsToSkip.length > 0 && stepId && stepsToSkip.indexOf(stepId) !== -1) {
+            console.log(`⏭️ [${i}] Step id "${stepId}" is in checkpoint stepsToSkip - skipping`);
+            const currentState = AUTOMATION_STATE.get();
+            if (!currentState || !currentState.paused) {
+              safeChromeCall(function() {
+                CHROME_API.storage.local.set({ [key]: i + 1 }, function() {
+                  if (CHROME_API.runtime && CHROME_API.runtime.lastError) {
+                    console.warn('Extension context invalidated (resume index):', CHROME_API.runtime.lastError.message);
+                  } else {
+                    console.log('✅ [' + i + '] Step skipped (stepsToSkip), updated resume index to: ' + (i + 1));
+                    var visibleStepNumber = getVisibleStepNumberFromIndex(i, steps);
+                    var visibleTotalSteps = getVisibleTotalSteps(steps);
+                    reportAutomationStatus({
+                      currentStep: visibleStepNumber,
+                      totalSteps: visibleTotalSteps,
+                      currentLabel: steps[i].label || '',
+                      currentDescription: steps[i].description || '',
+                      currentAction: steps[i].action || '',
+                      status: 'step_updated'
+                    });
+                  }
+                });
+              });
+            }
+            continue;
+          }
           
           // Enhanced retry logic for required fields
           const maxRetries = required ? 5 : 3; // More retries for required fields

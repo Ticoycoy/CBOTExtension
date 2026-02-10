@@ -1,0 +1,6 @@
+{
+  "repo_url": "https://github.com/owner/repo",
+  "branch": "main",
+  "target_path": "D:\\Auto\\cb-phExtension\\public",
+  "source_subfolder": "public"
+}
