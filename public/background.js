@@ -20548,6 +20548,124 @@ function increment(e) {
 
 // src/background.ts
 console.log("\u{1F525} Background script starting...");
+var MICRO_HOTKEY_COMMANDS = ["selector-grabber", "disabled-button", "sync", "notification", "campaign-viewer"];
+var DEFAULT_MICRO_HOTKEYS = {
+  selectorGrabber: "Ctrl+Shift+G",
+  disabledButton: "Ctrl+Shift+P",
+  sync: "Ctrl+Shift+S",
+  notification: "Ctrl+Shift+N",
+  campaignViewer: "Ctrl+Shift+V"
+};
+var ACTION_KEY_BY_COMMAND = {
+  "selector-grabber": "selectorGrabber",
+  "disabled-button": "disabledButton",
+  "sync": "sync",
+  "notification": "notification",
+  "campaign-viewer": "campaignViewer"
+};
+function applyMicroHotkeysFromStorage(microHotkeys) {
+  const api = typeof chrome !== "undefined" ? chrome.commands : null;
+  if (!api || typeof api.update !== "function") return;
+  const hotkeys = microHotkeys && typeof microHotkeys === "object" ? { ...DEFAULT_MICRO_HOTKEYS, ...microHotkeys } : DEFAULT_MICRO_HOTKEYS;
+  MICRO_HOTKEY_COMMANDS.forEach((commandName) => {
+    const key = ACTION_KEY_BY_COMMAND[commandName];
+    let shortcut = key ? (hotkeys[key] || "").trim() : "";
+    shortcut = shortcut.replace(/\s*\+\s*/g, "+").replace(/Control/gi, "Ctrl");
+    if (shortcut && api.update) {
+      api.update({ name: commandName, shortcut }).catch(() => {
+      });
+    }
+  });
+}
+function handleHotkeyCommand(command) {
+  if (command === "selector-grabber") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { command: "toggleSelectorGrabber" }).catch(() => {
+        });
+      }
+    });
+    return;
+  }
+  if (command === "disabled-button") {
+    chrome.storage.local.get(["autoStartEnabled"], (result) => {
+      const next = !(result.autoStartEnabled !== false);
+      chrome.storage.local.set({ autoStartEnabled: next });
+    });
+    return;
+  }
+  if (command === "notification") {
+    chrome.storage.local.get(["notificationsEnabled"], (result) => {
+      const next = !(result.notificationsEnabled !== false);
+      chrome.storage.local.set({ notificationsEnabled: next });
+    });
+    return;
+  }
+  if (command === "sync") {
+    chrome.runtime.sendMessage({ type: "SYNC_AUTOMATIONS" }, () => {
+    });
+    chrome.runtime.sendMessage({ type: "REFRESH_CAMPAIGN_DATA" }, () => {
+    });
+    return;
+  }
+  if (command === "campaign-viewer") {
+    chrome.storage.local.get(["CampaignData"], (result) => {
+      const data = result.CampaignData || {};
+      const campaignDataObj = data.campaignData || {};
+      const citationsData = Array.isArray(data.citations) ? data.citations : [];
+      const escape = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const pairs = [];
+      function flatten(o, prefix) {
+        if (o == null) {
+          pairs.push({ k: prefix || "(root)", v: "null" });
+          return;
+        }
+        if (Array.isArray(o)) {
+          if (o.length === 0) pairs.push({ k: prefix || "(root)", v: "[]" });
+          else o.forEach((item, i) => {
+            const p = prefix ? `${prefix}[${i}]` : `[${i}]`;
+            if (typeof item === "object" && item !== null && !Array.isArray(item)) flatten(item, p);
+            else pairs.push({ k: p, v: typeof item === "object" ? JSON.stringify(item) : String(item) });
+          });
+          return;
+        }
+        if (typeof o === "object") {
+          Object.keys(o).forEach((key) => {
+            const full = prefix ? `${prefix}.${key}` : key;
+            const v = o[key];
+            if (typeof v === "object" && v !== null && !Array.isArray(v)) flatten(v, full);
+            else pairs.push({ k: full, v: v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v) });
+          });
+          return;
+        }
+        pairs.push({ k: prefix || "(root)", v: String(o) });
+      }
+      flatten(campaignDataObj, "campaignData");
+      const rows = pairs.map(({ k: k2, v }) => `<tr><td>${escape(k2)}</td><td>${escape(v)}</td></tr>`).join("");
+      const citeRows = citationsData.slice(0, 200).map((c, i) => {
+        const site = c?.site ?? "";
+        const url = c?.url ?? "";
+        const title = c?.title ?? "";
+        const status = c?.status ?? "";
+        return `<tr><td>${i + 1}</td><td>${escape(site)}</td><td>${escape(url)}</td><td>${escape(title)}</td><td>${escape(status)}</td></tr>`;
+      }).join("");
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Campaign Data Viewer</title><style>body{font-family:sans-serif;margin:16px;background:#f5f5f5;} table{border-collapse:collapse;background:#fff;margin:8px 0;} th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;} th{background:#56ab2f;color:#fff;} .section{margin:16px 0;}</style></head><body><h1>Campaign Data Viewer (hotkey)</h1><div class="section"><h2>Campaign Data</h2><table><tr><th>Key</th><th>Value</th></tr>${rows}</table></div>${citationsData.length ? `<div class="section"><h2>Citations (${citationsData.length})</h2><table><tr><th>#</th><th>Site</th><th>URL</th><th>Title</th><th>Status</th></tr>${citeRows}</table></div>` : ""}</body></html>`;
+      const dataUrl = "data:text/html;charset=utf-8," + encodeURIComponent(html);
+      chrome.tabs.create({ url: dataUrl });
+    });
+  }
+}
+if (typeof chrome.commands !== "undefined") {
+  chrome.commands.onCommand.addListener(handleHotkeyCommand);
+  chrome.storage.local.get(["microHotkeys"], (result) => {
+    applyMicroHotkeysFromStorage(result.microHotkeys);
+  });
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.microHotkeys) {
+      applyMicroHotkeysFromStorage(changes.microHotkeys.newValue);
+    }
+  });
+}
 var firebaseConfig = {
   apiKey: "AIzaSyBZwNTgvurQB2XZTdG0hXEhH9nhHEsSyiY",
   authDomain: "cb-phaa.firebaseapp.com",
@@ -20559,6 +20677,127 @@ var firebaseConfig = {
 var app = initializeApp(firebaseConfig);
 var auth = getAuth(app);
 var db = getFirestore(app);
+var MICRO_HOTKEY_DEFAULTS = {
+  "selector-grabber": "Ctrl+Shift+G",
+  "disabled-button": "Ctrl+Shift+P",
+  "sync": "Ctrl+Shift+S",
+  "notification": "Ctrl+Shift+N",
+  "campaign-viewer": "Ctrl+Shift+V"
+};
+var STORAGE_KEY_TO_COMMAND = {
+  selectorGrabber: "selector-grabber",
+  disabledButton: "disabled-button",
+  sync: "sync",
+  notification: "notification",
+  campaignViewer: "campaign-viewer"
+};
+function updateMicroHotkeyCommands() {
+  const api = typeof chrome !== "undefined" ? chrome.commands : null;
+  if (!api || typeof api.update !== "function") return;
+  chrome.storage.local.get(["microHotkeys"], (result) => {
+    const hotkeys = result.microHotkeys && typeof result.microHotkeys === "object" ? result.microHotkeys : {};
+    const commands = Object.keys(MICRO_HOTKEY_DEFAULTS);
+    commands.forEach((cmd) => {
+      const storageKey = Object.keys(STORAGE_KEY_TO_COMMAND).find((k2) => STORAGE_KEY_TO_COMMAND[k2] === cmd);
+      const shortcut = storageKey && hotkeys[storageKey] ? String(hotkeys[storageKey]).trim() : MICRO_HOTKEY_DEFAULTS[cmd] || "";
+      if (shortcut && api.update) {
+        api.update({ name: cmd, shortcut }).catch(() => {
+        });
+      }
+    });
+  });
+}
+function handleCommandAction(command) {
+  if (command === "selector-grabber") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { command: "toggleSelectorGrabber" }).catch(() => {
+        });
+      }
+    });
+    return;
+  }
+  if (command === "disabled-button") {
+    chrome.storage.local.get(["autoStartEnabled"], (result) => {
+      const next = !(result.autoStartEnabled !== false);
+      chrome.storage.local.set({ autoStartEnabled: next });
+    });
+    return;
+  }
+  if (command === "notification") {
+    chrome.storage.local.get(["notificationsEnabled"], (result) => {
+      const next = !(result.notificationsEnabled !== false);
+      chrome.storage.local.set({ notificationsEnabled: next });
+    });
+    return;
+  }
+  if (command === "sync") {
+    chrome.runtime.sendMessage({ type: "SYNC_AUTOMATIONS" }).catch(() => {
+    });
+    chrome.runtime.sendMessage({ type: "REFRESH_CAMPAIGN_DATA" }).catch(() => {
+    });
+    return;
+  }
+  if (command === "campaign-viewer") {
+    chrome.storage.local.get(["CampaignData"], (result) => {
+      const data = result.CampaignData || {};
+      const campaignDataObj = data.campaignData || {};
+      const citationsData = Array.isArray(data.citations) ? data.citations : [];
+      const escape = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const pairs = [];
+      function flatten(o, prefix) {
+        if (o == null) {
+          pairs.push({ k: prefix || "(root)", v: "null" });
+          return;
+        }
+        if (Array.isArray(o)) {
+          if (o.length === 0) pairs.push({ k: prefix || "(root)", v: "[]" });
+          else o.forEach((item, i) => {
+            const p = prefix ? `${prefix}[${i}]` : `[${i}]`;
+            if (typeof item === "object" && item !== null && !Array.isArray(item)) flatten(item, p);
+            else pairs.push({ k: p, v: typeof item === "object" ? JSON.stringify(item) : String(item) });
+          });
+          return;
+        }
+        if (typeof o === "object") {
+          Object.keys(o).forEach((key) => {
+            const full = prefix ? `${prefix}.${key}` : key;
+            const v = o[key];
+            if (typeof v === "object" && v !== null && !Array.isArray(v)) flatten(v, full);
+            else pairs.push({ k: full, v: v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v) });
+          });
+          return;
+        }
+        pairs.push({ k: prefix || "(root)", v: String(o) });
+      }
+      flatten(campaignDataObj, "campaignData");
+      const rows = pairs.map(({ k: k2, v }) => `<tr><td>${escape(k2)}</td><td>${escape(v)}</td></tr>`).join("");
+      const citeRows = citationsData.slice(0, 200).map((c, i) => {
+        const site = c?.site ?? "";
+        const url = c?.url ?? "";
+        const title = c?.title ?? "";
+        const status = c?.status ?? "";
+        return `<tr><td>${i + 1}</td><td>${escape(site)}</td><td>${escape(url)}</td><td>${escape(title)}</td><td>${escape(status)}</td></tr>`;
+      }).join("");
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Campaign Data Viewer</title><style>body{font-family:sans-serif;margin:16px;background:#f5f5f5;} table{border-collapse:collapse;background:#fff;margin:8px 0;} th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;} th{background:#56ab2f;color:#fff;} .section{margin:16px 0;}</style></head><body><h1>Campaign Data Viewer (hotkey)</h1><div class="section"><h2>Campaign Data</h2><table><tr><th>Key</th><th>Value</th></tr>${rows}</table></div>${citationsData.length ? `<div class="section"><h2>Citations (${citationsData.length})</h2><table><tr><th>#</th><th>Site</th><th>URL</th><th>Title</th><th>Status</th></tr>${citeRows}</table></div>` : ""}</body></html>`;
+      const dataUrl = "data:text/html;charset=utf-8," + encodeURIComponent(html);
+      chrome.tabs.create({ url: dataUrl });
+    });
+  }
+}
+if (typeof chrome !== "undefined" && chrome.commands && chrome.commands.onCommand) {
+  chrome.commands.onCommand.addListener((command) => {
+    if (MICRO_HOTKEY_DEFAULTS.hasOwnProperty(command)) {
+      handleCommandAction(command);
+    }
+  });
+  updateMicroHotkeyCommands();
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.microHotkeys) {
+      updateMicroHotkeyCommands();
+    }
+  });
+}
 var unsubscribeCampaignData = null;
 var unsubscribePlanSubscriber = null;
 var unsubscribeUserRole = null;
@@ -22745,6 +22984,98 @@ function listenToUserCampaignData(userId) {
 }
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("\u{1F4E8} Message received:", message);
+  if (message && message.type === "HOTKEY_ACTION") {
+    const action = message.action;
+    const tabId = sender?.tab?.id;
+    if (action === "selectorGrabber") {
+      const targetTabId = typeof tabId === "number" ? tabId : null;
+      if (targetTabId != null) {
+        chrome.tabs.sendMessage(targetTabId, { command: "toggleSelectorGrabber" }).catch(() => {
+        });
+      } else {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.id) {
+            chrome.tabs.sendMessage(tabs[0].id, { command: "toggleSelectorGrabber" }).catch(() => {
+            });
+          }
+        });
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
+    if (action === "disabledButton") {
+      chrome.storage.local.get(["autoStartEnabled"], (result) => {
+        const next = !(result.autoStartEnabled !== false);
+        chrome.storage.local.set({ autoStartEnabled: next }, () => sendResponse({ ok: true, autoStartEnabled: next }));
+      });
+      return true;
+    }
+    if (action === "notification") {
+      chrome.storage.local.get(["notificationsEnabled"], (result) => {
+        const next = !(result.notificationsEnabled !== false);
+        chrome.storage.local.set({ notificationsEnabled: next }, () => sendResponse({ ok: true, notificationsEnabled: next }));
+      });
+      return true;
+    }
+    if (action === "sync") {
+      chrome.runtime.sendMessage({ type: "SYNC_AUTOMATIONS" }, () => {
+      });
+      chrome.runtime.sendMessage({ type: "REFRESH_CAMPAIGN_DATA" }, () => {
+      });
+      sendResponse({ ok: true });
+      return false;
+    }
+    if (action === "campaignViewer") {
+      chrome.storage.local.get(["CampaignData"], (result) => {
+        const data = result.CampaignData || {};
+        const campaignDataObj = data.campaignData || {};
+        const citationsData = Array.isArray(data.citations) ? data.citations : [];
+        const escape = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        const pairs = [];
+        function flatten(o, prefix) {
+          if (o == null) {
+            pairs.push({ k: prefix || "(root)", v: "null" });
+            return;
+          }
+          if (Array.isArray(o)) {
+            if (o.length === 0) pairs.push({ k: prefix || "(root)", v: "[]" });
+            else o.forEach((item, i) => {
+              const p = prefix ? `${prefix}[${i}]` : `[${i}]`;
+              if (typeof item === "object" && item !== null && !Array.isArray(item)) flatten(item, p);
+              else pairs.push({ k: p, v: typeof item === "object" ? JSON.stringify(item) : String(item) });
+            });
+            return;
+          }
+          if (typeof o === "object") {
+            Object.keys(o).forEach((key) => {
+              const full = prefix ? `${prefix}.${key}` : key;
+              const v = o[key];
+              if (typeof v === "object" && v !== null && !Array.isArray(v)) flatten(v, full);
+              else pairs.push({ k: full, v: v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v) });
+            });
+            return;
+          }
+          pairs.push({ k: prefix || "(root)", v: String(o) });
+        }
+        flatten(campaignDataObj, "campaignData");
+        const rows = pairs.map(({ k: k2, v }) => `<tr><td>${escape(k2)}</td><td>${escape(v)}</td></tr>`).join("");
+        const citeRows = citationsData.slice(0, 200).map((c, i) => {
+          const site = c?.site ?? "";
+          const url = c?.url ?? "";
+          const title = c?.title ?? "";
+          const status = c?.status ?? "";
+          return `<tr><td>${i + 1}</td><td>${escape(site)}</td><td>${escape(url)}</td><td>${escape(title)}</td><td>${escape(status)}</td></tr>`;
+        }).join("");
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Campaign Data Viewer</title><style>body{font-family:sans-serif;margin:16px;background:#f5f5f5;} table{border-collapse:collapse;background:#fff;margin:8px 0;} th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;} th{background:#56ab2f;color:#fff;} .section{margin:16px 0;}</style></head><body><h1>Campaign Data Viewer (hotkey)</h1><div class="section"><h2>Campaign Data</h2><table><tr><th>Key</th><th>Value</th></tr>${rows}</table></div>${citationsData.length ? `<div class="section"><h2>Citations (${citationsData.length})</h2><table><tr><th>#</th><th>Site</th><th>URL</th><th>Title</th><th>Status</th></tr>${citeRows}</table></div>` : ""}</body></html>`;
+        const dataUrl = "data:text/html;charset=utf-8," + encodeURIComponent(html);
+        chrome.tabs.create({ url: dataUrl });
+        sendResponse({ ok: true });
+      });
+      return true;
+    }
+    sendResponse({ ok: false, error: "Unknown hotkey action" });
+    return false;
+  }
   if (message && message.action === "updateAutomationStatus") {
     console.log("\u{1F504} Automation status update received:", message.status);
     chrome.storage.local.set({

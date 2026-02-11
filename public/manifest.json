@@ -49,10 +49,26 @@
   ],
   "commands": {
     "start-automation": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+F"
-      },
+      "suggested_key": { "default": "Ctrl+Shift+F" },
       "description": "Run automation manually"
+    },
+    "selector-grabber": {
+      "suggested_key": { "default": "Ctrl+Shift+G" },
+      "description": "Toggle selector grabber"
+    },
+    "disabled-button": {
+      "suggested_key": { "default": "Ctrl+Shift+P" },
+      "description": "Toggle automation on/off (center)"
+    },
+    "sync": {
+      "suggested_key": { "default": "Ctrl+Shift+S" },
+      "description": "Sync automation data"
+    },
+    "notification": {
+      "description": "Toggle notifications"
+    },
+    "campaign-viewer": {
+      "description": "Open campaign viewer"
     }
   },
   "content_scripts": [
