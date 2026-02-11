@@ -60,12 +60,22 @@ $owner = $Matches[1]
 $repo = $Matches[2].TrimEnd('/')
 
 $zipUrl = "https://github.com/$owner/$repo/archive/refs/heads/$branch.zip"
-$resolvedTarget = [System.IO.Path]::GetFullPath($targetPath.Trim())
+
+# Resolve target path safely (avoid .ctor errors with invalid paths)
+try {
+    $resolvedTarget = [System.IO.Path]::GetFullPath($targetPath.Trim())
+} catch {
+    $resolvedTarget = $targetPath.Trim()
+    if (-not [System.IO.Path]::IsPathRooted($resolvedTarget)) {
+        $resolvedTarget = Join-Path $ProjectRoot $resolvedTarget
+    }
+}
 
 $tempDir = $null
 try {
     Write-Host "Downloading from GitHub: $zipUrl"
-    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "extension-updater-$(Get-Random)"
+    $tempBase = [System.IO.Path]::GetTempPath()
+    $tempDir = Join-Path $tempBase "ext-upd-$([System.Guid]::NewGuid().ToString('N').Substring(0,8))"
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
     $zipPath = Join-Path $tempDir "repo.zip"
@@ -81,8 +91,33 @@ try {
         exit 1
     }
 
+    # Ensure we got a real zip (GitHub may return HTML on 404/auth)
+    $bytes = [System.IO.File]::ReadAllBytes($zipPath)
+    if ($bytes.Length -lt 4) {
+        Write-Error "Downloaded file too small or invalid (not a zip). Check repo_url and branch."
+        exit 1
+    }
+    $sig = [System.BitConverter]::ToString($bytes[0..1]) -replace '-',''
+    if ($sig -ne "504B") {
+        $preview = [System.Text.Encoding]::ASCII.GetString($bytes[0..[Math]::Min(200, $bytes.Length-1)])
+        if ($preview -match "<!DOCTYPE|<html") {
+            Write-Error "GitHub returned HTML instead of zip (wrong repo/branch or repo private?). Check repo_url and branch."
+        } else {
+            Write-Error "Downloaded file is not a valid zip (signature $sig). Check repo_url and network."
+        }
+        exit 1
+    }
+
     $extractDir = Join-Path $tempDir "extract"
-    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+    # Use Expand-Archive (PowerShell 5+): -Force overwrites if dir exists, avoids ExtractToDirectory "directory exists" error
+    try {
+        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+    } catch {
+        # Fallback for older PowerShell: ZipFile (destination must NOT exist)
+        if (Test-Path $extractDir) { Remove-Item -Path $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
+    }
 
     # GitHub zip contains one folder: repo-branch (e.g. CBOTExtension-main)
     $extractedTop = Get-ChildItem -Path $extractDir -Directory | Select-Object -First 1
